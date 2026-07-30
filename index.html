@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#049db6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Hatchery Island">
+  <title>Angry Birds: Hatchery Island — Web Port</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/images/app-icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="app">
+    <canvas id="game" aria-label="Angry Birds Hatchery Island"></canvas>
+    <div id="loading" class="loading"><img src="assets/images/archive-screenshot.jpeg" alt="Angry Birds Hatchery Island"><div class="loadbar"><i></i></div><b>RESTORING HATCHERY…</b></div>
+
+    <section id="hud" class="hud" hidden>
+      <button id="homeButton" class="circle-button" aria-label="Return to title">⌂</button>
+      <div class="currency"><span>★</span><b id="stars">60</b></div>
+      <div class="currency coins"><span>●</span><b id="coins">300</b></div>
+      <button id="soundButton" class="circle-button sound" aria-label="Toggle sound">♫</button>
+      <div class="tools">
+        <button data-tool="nest"><strong><img src="assets/images/tool-nest.webp" alt=""></strong><span>NEST</span><small>20</small></button>
+        <button data-tool="egg"><strong><img src="assets/images/tool-egg.webp" alt=""></strong><span>EGG</span><small>20</small></button>
+        <button data-tool="birds"><strong><img src="assets/images/tool-bird.webp" alt=""></strong><span>BIRDS</span></button>
+        <button data-tool="tasks"><strong><img src="assets/images/tool-tasks.webp" alt=""></strong><span>TASKS</span></button>
+      </div>
+      <div class="zoom-controls"><button id="zoomIn">＋</button><button id="zoomOut">−</button></div>
+    </section>
+
+    <div id="contextMenu" class="context-menu" hidden>
+      <h3 id="contextTitle">Object</h3><p id="contextText"></p>
+      <div id="contextActions"></div>
+      <button class="close-context">×</button>
+    </div>
+
+    <div id="panel" class="panel" hidden>
+      <div class="panel-card">
+        <button id="closePanel" class="panel-close">×</button>
+        <h2 id="panelTitle">HATCHERY</h2>
+        <div id="panelBody"></div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <div id="rotate"><b>ROTATE YOUR DEVICE</b><span>Hatchery Island plays in landscape.</span></div>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>

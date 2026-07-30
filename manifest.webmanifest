@@ -1,0 +1,12 @@
+{
+  "name":"Angry Birds: Hatchery Island",
+  "short_name":"Hatchery Island",
+  "description":"Browser preservation port of Rovio's 2011 Hatchery Island prototype.",
+  "start_url":"./",
+  "scope":"./",
+  "display":"fullscreen",
+  "orientation":"landscape",
+  "background_color":"#078da8",
+  "theme_color":"#049db6",
+  "icons":[{"src":"assets/images/app-icon-192.png","sizes":"192x192","type":"image/png"},{"src":"assets/images/app-icon-512.png","sizes":"512x512","type":"image/png"}]
+}
