@@ -21,9 +21,10 @@ This is an active preservation port. The playable Hatchery systems are available
 - Layered body, eyes, beak and accessory rendering, blinking and idle motion.
 - Bird designer, bird inventory and four recovered task tiers.
 - Hatchery birds form the active slingshot roster—there are no pre-granted starter birds after save migration.
-- All 325 bundled level Lua files converted to browser data with zero conversion failures.
-- Matter.js slingshot physics, original level structures, pigs, block materials, damage, scoring and three-star results.
-- Hatchery bird specialties mapped into level play: speed, explosion, split, boomerang and egg-drop abilities.
+- All 325 bundled level Lua files converted with zero failures and shown in the non-numeric order authored in `episodes.lua`; every button also shows its distinct original Lua filename.
+- Slingshot physics translated from the original KA3D values: 20-pixel physics scale, 0.92 dynamic-body size factor, authored circle radii/polygon vertices, material density/friction/restitution, 9.81-unit gravity, defence/strength damage and stable-goal completion timing.
+- Original score rules restored: 5,000 points per pig, 500/default block bonuses, 10,000 per unused bird, and each level's silver/gold thresholds from `starLimits.lua`.
+- Hatchery-bird shape/colour specialty combinations are used in level play, including boost, explosion, split-bombling and egg-drop variants.
 - Original Hatchery ambient audio, fanfares, UI effects, level sounds and title music.
 - Responsive iPad landscape UI and service-worker caching.
 
@@ -32,7 +33,7 @@ This is an active preservation port. The playable Hatchery systems are available
 The IPA uses Rovio's native KA3D/Lua 5.1 engine rather than Unity. The original assets contain:
 
 - 462 AES-encrypted Lua files, all successfully decrypted to readable source.
-- 895 named sprites from 33 KA3D sprite atlases.
+- 1,483 named sprites registered from 53 converted KA3D/PVR atlases.
 - Original PVR v2 RGBA4444/RGB565 textures converted without vertical flipping.
 - A 70×70 Tiled-style Lua map with 5 layers and 1,500+ decoration objects.
 - 164 Hatchery object definitions.

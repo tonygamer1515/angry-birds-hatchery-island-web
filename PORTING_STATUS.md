@@ -31,9 +31,13 @@ All 462 `.lua` resources were decrypted successfully using the original Angry Bi
 | `TaskManager` | Four recovered task tiers and rewards |
 | `hatcheryAnimations` | Idle sway, blink, wobble and timer motion |
 | Hatchery selected-bird list | Active slingshot roster |
-| 325 level Lua tables | Browser level database |
-| Native rigid-body world | Matter.js circles, boxes, materials and collisions |
-| Bird specialty dispatch | Speed, explosion, split, boomerang and egg drop |
+| 325 level Lua tables + `episodes.lua` | Distinct browser levels in Rovio's authored world order |
+| `physicsToWorld = 20` + `sizeFactor = 0.92` | Source-pixel-to-physics body sizing |
+| Native circles/boxes/polygons | Matter.js bodies using authored radii and vertices |
+| KA3D materials and collision damage | Original density/friction/restitution, defence, strength and colour damage factors |
+| `starLimits.lua` and score constants | Original 1/2/3-star thresholds and pig/block/unused-bird bonuses |
+| `checkLevelComplete` | Requires a fired bird, all goals cleared and a stable/timeout ending window |
+| Hatchery `Bird:triggerSpecialty` | Shape/colour boost, explosion, split-bombling and egg-drop combinations |
 | KA3D audio calls | HTML Audio using original files |
 
 ## Verified tests
@@ -46,7 +50,9 @@ All 462 `.lua` resources were decrypted successfully using the original Angry Bi
 - Fresh/legacy saves no longer receive two synthetic starter birds.
 - Hatched custom bird becomes the level-launch projectile.
 - Pack 1 level loads original blocks and pigs with no browser errors.
-- Slingshot drag/release and Matter.js simulation verified.
+- All 325 level records have distinct authored world signatures; all 325 have original star thresholds.
+- A headless Matter.js stability pass over all 325 layouts reports no pre-shot goal loss with the corrected gravity/body scale.
+- Slingshot pull length and launch impulse now use the original 5.4-unit maximum and KA3D force conversion.
 - Pointer cancellation, lost capture, blur/background recovery and post-pinch single-pointer panning handled.
 - Level camera now fits each Lua level’s authored coordinate extent and follows launched birds.
 - All 325 converted levels are exposed through the episode selector.
