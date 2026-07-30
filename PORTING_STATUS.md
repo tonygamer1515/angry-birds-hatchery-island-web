@@ -38,15 +38,17 @@ All 462 `.lua` resources were decrypted successfully using the original Angry Bi
 | `starLimits.lua` and score constants | Original 1/2/3-star thresholds and pig/block/unused-bird bonuses |
 | `checkLevelComplete` | Requires a fired bird, all goals cleared and a stable/timeout ending window |
 | Hatchery `Bird:triggerSpecialty` | Shape/colour boost, explosion, split-bombling and egg-drop combinations |
-| KA3D audio calls | HTML Audio using original files |
+| KA3D audio calls | Complete per-bird launch/select/collision, material, pig, ambience and Hatchery voice packs |
+| First-run help flow | Six-page persistent tutorial plus sling reminder |
 
 ## Verified tests
 
 - Title and world enter with no browser console errors.
 - Exact island map renders from original sprites and object definitions.
-- Nest → egg → hurry → hatch flow succeeds.
-- Currency deductions and local persistence verified.
-- Bird object appears after hatch.
+- Nest → egg → hurry → gender/voice choice → hatch flow succeeds.
+- A female-only hatch produced task progress `[1,0,0]` and achievements `{male:0,female:1}`—one bird no longer grants both genders.
+- Currency deductions, bird gender, selected voice and local persistence verified.
+- Bird object appears after hatch and plays its saved voice.
 - Fresh/legacy saves no longer receive two synthetic starter birds.
 - Hatched custom bird becomes the level-launch projectile.
 - Pack 1 level loads original blocks and pigs with no browser errors.
@@ -58,7 +60,9 @@ All 462 `.lua` resources were decrypted successfully using the original Angry Bi
 - All 18 normal worlds and Golden Eggs are exposed through the original-art pack selector.
 - Automated browser pass opened the first authored level from all 19 packs with different IDs/object counts and no console errors.
 - Joint-heavy `pack8/LevelP3_313` loaded 195 bodies and all four native constraints.
-- Pointer drag/release test confirms the bird wakes from the sling, remains finite, flies, and activates camera follow.
+- Three-bird browser test reports `flock: 3`, visibly queues the waiting birds and launches the first with finite moving physics.
+- Controlled mass-impact test dropped a 1.49-mass beam onto a pig and removed the pig goal through block damage.
+- First-run tutorial opens at step 1/6 and persists completion.
 - Lazy three-atlas loading removes the mobile-Safari all-at-once decode failure that produced `LOAD ERROR: undefined`.
 
 ## Not yet declared complete

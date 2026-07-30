@@ -9,16 +9,50 @@ const camera={x:5480,y:2380,zoom:1,drag:false,startX:0,startY:0,baseX:0,baseY:0,
 const pointers=new Map();
 const audio={title:new Audio('assets/audio/title_theme.mp3'),ambient:new Audio('assets/audio/hatchery_ambient.mp3'),level:null};
 audio.title.loop=audio.ambient.loop=true;audio.title.volume=.38;audio.ambient.volume=.34;
-let soundOn=true,titleButton={x:0,y:0,w:0,h:0},placement=null,selected=null,toastTimer=0,slingshot=null;
+let soundOn=true,titleButton={x:0,y:0,w:0,h:0},placement=null,selected=null,toastTimer=0,slingshot=null,nextBirdVoiceAt=performance.now()+7000;
 let baseTiles=[],worldDecor=[],worldObstacles=[],dynamicDecor=[];
 
-const freshSave=()=>({version:2,stars:60,coins:300,objects:[
+const freshSave=()=>({version:3,stars:60,coins:300,objects:[
  {id:'nest-1',type:'nest',x:5480,y:2400,state:'empty',created:Date.now()}
-],removed:[],taskTier:0,taskProgress:[0,0,0],scores:{},highScores:{},sound:true});
+],removed:[],taskTier:0,taskProgress:[0,0,0],scores:{},highScores:{},achievements:{maleBirds:0,femaleBirds:0},tutorial:{completed:false,slingShown:false},sound:true});
 let save=loadSave();soundOn=save.sound!==false;
-function loadSave(){try{const parsed=JSON.parse(localStorage.getItem('hatchery-island-save')||'{}'),merged={...freshSave(),...parsed};if(!parsed.version||parsed.version<2){merged.objects=(merged.objects||[]).filter(o=>o.id!=='bird-1'&&o.id!=='bird-2');merged.version=2;localStorage.setItem('hatchery-island-save',JSON.stringify(merged))}return merged}catch{return freshSave()}}
+function loadSave(){
+ try{
+  const parsed=JSON.parse(localStorage.getItem('hatchery-island-save')||'{}'),merged={...freshSave(),...parsed};
+  merged.objects=(merged.objects||[]).filter(object=>object.id!=='bird-1'&&object.id!=='bird-2');
+  merged.achievements={...freshSave().achievements,...(parsed.achievements||{})};merged.tutorial={...freshSave().tutorial,...(parsed.tutorial||{})};
+  if(!parsed.version||parsed.version<3){
+   const birds=merged.objects.filter(object=>object.type==='bird');
+   birds.forEach((object,index)=>{object.gender=object.gender||(index%2?'female':'male');object.voice=object.voice||((object.birdIndex||index)%12+1)});
+   merged.achievements.maleBirds=birds.filter(object=>object.gender==='male').length;merged.achievements.femaleBirds=birds.filter(object=>object.gender==='female').length;
+   if((merged.taskTier||0)===0){merged.taskProgress=merged.taskProgress||[0,0,0];merged.taskProgress[0]=birds.some(object=>object.gender==='female')?1:0;merged.taskProgress[1]=birds.some(object=>object.gender==='male')?1:0}
+   merged.version=3;localStorage.setItem('hatchery-island-save',JSON.stringify(merged));
+  }
+  return merged;
+ }catch{return freshSave()}
+}
 function persist(){localStorage.setItem('hatchery-island-save',JSON.stringify(save))}
-function play(name,vol=.7){if(!soundOn)return;const a=new Audio(`assets/audio/${name}`);a.volume=vol;a.play().catch(()=>{})}
+const HATCHERY_VOICES=Array.from({length:12},(_,index)=>`h_bird_idle_${index+1}.wav`);
+const BIRD_SOUND_PACKS={
+ RED:{select:'bird 01 select.mp3',launch:'bird 01 flying.mp3',collision:['bird 01 collision a1.mp3','bird 01 collision a2.mp3','bird 01 collision a3.mp3','bird 01 collision a4.mp3']},
+ BLUE:{select:'bird 02 select.mp3',launch:'bird 02 flying.mp3',collision:['bird 02 collision a1.mp3','bird 02 collision a2.mp3','bird 02 collision a3.mp3','bird 02 collision a4.mp3','bird 02 collision a5.mp3']},
+ YELLOW:{select:'bird 03 select.mp3',launch:'bird 03 flying.mp3',collision:['bird 03 collision a1.mp3','bird 03 collision a2.mp3','bird 03 collision a3.mp3','bird 03 collision a4.mp3','bird 03 collision a5.mp3']},
+ BLACK:{select:'bird 04 select.mp3',launch:'bird 04 flying.mp3',collision:['bird 04 collision a1.mp3','bird 04 collision a2.mp3','bird 04 collision a3.mp3','bird 04 collision a4.mp3']},
+ WHITE:{select:'bird 05 select.mp3',launch:'bird 05 flying.mp3',collision:['bird 05 collision a1.mp3','bird 05 collision a2.mp3','bird 05 collision a3.mp3','bird 05 collision a4.mp3','bird 05 collision a5.mp3']},
+ GREEN:{select:'boomerang_select.mp3',launch:'bird_06_flying.mp3',collision:['bird 03 collision a1.mp3','bird 03 collision a2.mp3','bird 03 collision a3.mp3']},
+ BIGBROTHER:{select:'bigbrother_select.mp3',launch:'bigbrother_fly.mp3',collision:['bird 01 collision a1_low.mp3','bird 01 collision a2_low.mp3','bird 01 collision a3_low.mp3','bird 01 collision a4_low.mp3']},
+ ORANGE:{select:'Globe_Bird_Selection_1.mp3',launch:'Globe_Bird_Launch_3.mp3',collision:['Globe_Bird_Hit_1.mp3','Globe_Bird_Hit_2.mp3','Globe_Bird_Hit_3.mp3','Globe_Bird_Hit_4.mp3']}
+};
+function play(name,vol=.7){if(!soundOn||!name)return;const a=new Audio(`assets/audio/${name}`);a.volume=vol;a.play().catch(()=>{})}
+function playRandom(list,volume=.7){if(list?.length)play(list[Math.floor(Math.random()*list.length)],volume)}
+function birdSoundPack(source){const bird=getBird(source),key=String(bird?.color||bird?.shape||'RED').toUpperCase();return BIRD_SOUND_PACKS[key]||BIRD_SOUND_PACKS.RED}
+function birdVoiceFile(object){return HATCHERY_VOICES[clamp((object?.voice||1)-1,0,HATCHERY_VOICES.length-1)]}
+function playBirdVoice(object,volume=.65){play(birdVoiceFile(object),volume)}
+function materialSound(body,phase){
+ const material=body?.plugin?.material||'wood',prefix=material==='piglette'?'piglette':material==='rock'?'rock':material==='light'?'light':'wood';
+ if(phase==='destroyed')return prefix==='piglette'?'piglette destroyed.mp3':`${prefix} destroyed a${1+Math.floor(Math.random()*3)}.mp3`;
+ const amount=phase==='damage'?(prefix==='piglette'?8:3):(prefix==='piglette'||prefix==='light'?8:prefix==='wood'?6:5);return`${prefix} ${phase} a${1+Math.floor(Math.random()*amount)}.mp3`;
+}
 function setMusic(which){Object.values(audio).filter(Boolean).forEach(a=>{if(a!==audio[which]){a.pause();a.currentTime=0}});if(soundOn&&which&&audio[which])audio[which].play().catch(()=>{})}
 function setLevelAmbience(theme){
  const index=parseInt(String(theme||'theme1').match(/\d+/)?.[0]||'1');
@@ -65,8 +99,8 @@ addEventListener('resize',resize);resize();
 async function boot(){
  try{
   const json=async url=>{const response=await fetch(url);if(!response.ok)throw new Error(`${url}: HTTP ${response.status}`);return response.json()};
-  levelsPromise=json('assets/data/levels.json?build=6').then(value=>(levelsData=value));
-  const [s,g,p]=await Promise.all([json('assets/data/sprites.json?build=6'),json('assets/data/game-data.json?build=6'),json('assets/data/physics.json?build=6')]);
+  levelsPromise=json('assets/data/levels.json?build=7').then(value=>(levelsData=value));
+  const [s,g,p]=await Promise.all([json('assets/data/sprites.json?build=7'),json('assets/data/game-data.json?build=7'),json('assets/data/physics.json?build=7')]);
   registry=s;data=g;physicsData=p;sprites=new SpriteLibrary(s);
   // Boot only the title atlases. The old 100+ MB all-at-once decode could make
   // mobile Safari reject an Image event, which appeared as "LOAD ERROR: undefined".
@@ -108,6 +142,7 @@ function renderWorld(){
  if(placement){const p=screenToWorld(placement.pointerX,placement.pointerY),tile=worldToTile(p.x,p.y),snap=tilePoint(tile.col,tile.row);ctx.globalAlpha=.65;drawPlacement(placement.type,snap.x,snap.y);ctx.globalAlpha=1}
  ctx.restore();
 }
+function updateWorldAmbience(now){if(!soundOn||now<nextBirdVoiceAt||$('#panel').hidden===false)return;const birds=save.objects.filter(object=>object.type==='bird');if(birds.length)playBirdVoice(birds[Math.floor(Math.random()*birds.length)],.24);nextBirdVoiceAt=now+8000+Math.random()*9000}
 function getBird(o){return o.custom||data.prototypeBirds[o.birdIndex%data.prototypeBirds.length]}
 function drawWorldObject(o){
  if(o.type==='nest'){const bob=Math.sin(time*2+o.x)*1.5;sprites.draw('H_GAME_OBJECT_NEST_1_BOTTOM',o.x,o.y+bob);if(o.state==='incubating'||o.state==='ready')sprites.draw('H_GAME_OBJECT_EGG_1',o.x,o.y-48+bob,.52,Math.sin(time*4)*.03);sprites.draw('H_GAME_OBJECT_NEST_1_TOP',o.x,o.y+bob);if(o.state==='incubating')drawTimer(o)}
@@ -123,19 +158,34 @@ function worldToTile(x,y){const dx=x-MAP_ORIGIN_X,a=dx/(TILE_W/2),b=y/(TILE_H/2)
 function objectAt(x,y){const all=[...save.objects,...worldObstacles];let best=null,dist=95/camera.zoom;for(const o of all){const d=Math.hypot(o.x-x,o.y-y);if(d<dist){best=o;dist=d}}return best}
 
 function handleTap(x,y){
- if(screen==='title'){if(x>=titleButton.x&&x<=titleButton.x+titleButton.w&&y>=titleButton.y&&y<=titleButton.y+titleButton.h){play('menu_confirm.mp3');setMusic('ambient');screen='world';$('#hud').hidden=false;toast('WELCOME TO HATCHERY ISLAND!')}return}
+ if(screen==='title'){if(x>=titleButton.x&&x<=titleButton.x+titleButton.w&&y>=titleButton.y&&y<=titleButton.y+titleButton.h){play('menu_confirm.mp3');setMusic('ambient');screen='world';$('#hud').hidden=false;nextBirdVoiceAt=performance.now()+5000;toast('WELCOME TO HATCHERY ISLAND!');if(!save.tutorial.completed)setTimeout(()=>{if(screen==='world')showTutorial(0)},450)}return}
  if(screen!=='world')return;const w=screenToWorld(x,y);
  if(placement){const tile=worldToTile(w.x,w.y),p=tilePoint(tile.col,tile.row);if(placement.type==='nest'){if(save.coins<20)return toast('NOT ENOUGH COINS');save.coins-=20;save.objects.push({id:'nest-'+Date.now(),type:'nest',x:p.x,y:p.y,state:'empty',created:Date.now()});play('h_purchase.wav')}else if(placement.type==='move'&&placement.object){placement.object.x=p.x;placement.object.y=p.y;play('abi_inventory_place.mp3')}placement=null;$$('.tools button').forEach(b=>b.classList.remove('active'));persist();updateHud();return}
  const o=objectAt(w.x,w.y);if(o)openContext(o)
 }
 function openContext(o){selected=o;const box=$('#contextMenu'),title=$('#contextTitle'),text=$('#contextText'),actions=$('#contextActions');actions.innerHTML='';box.hidden=false;
- if(o.type==='nest'){title.textContent='NEST';if(o.state==='empty'){text.textContent='This nest is ready for an egg.';addAction('ADD EGG · 20',()=>addEgg(o))}else if(o.state==='incubating'){const left=Math.max(0,Math.ceil(60-(Date.now()-o.created)/1000));text.textContent=`The egg hatches in ${left} seconds.`;addAction('HURRY · 10 ★',()=>hurry(o))}else{text.textContent='The egg is ready to hatch!';addAction('HATCH!',()=>hatch(o))}addAction('MOVE',()=>beginMove(o))}
- else if(o.type==='bird'){title.textContent='HATCHED BIRD';text.textContent='View or customize this bird.';addAction('CUSTOMIZE',()=>openBirdDesigner(o));addAction('REMOVE',()=>removeUser(o))}
+ if(o.type==='nest'){title.textContent='NEST';if(o.state==='empty'){text.textContent='This nest is ready for an egg.';addAction('ADD EGG · 20',()=>addEgg(o))}else if(o.state==='incubating'){const left=Math.max(0,Math.ceil(60-(Date.now()-o.created)/1000));text.textContent=`The egg hatches in ${left} seconds.`;addAction('HURRY · 10 ★',()=>hurry(o))}else{text.textContent='The egg is ready. Choose its gender and voice before hatching.';addAction('CHOOSE & HATCH!',()=>openHatchDialog(o))}addAction('MOVE',()=>beginMove(o))}
+ else if(o.type==='bird'){title.textContent=`${o.gender==='female'?'FEMALE':'MALE'} HATCHED BIRD`;text.textContent=`Voice pack ${o.voice||1}. This bird is part of your slingshot flock.`;addAction('HEAR VOICE',()=>playBirdVoice(o));addAction('CUSTOMIZE',()=>openBirdDesigner(o));addAction('REMOVE',()=>removeUser(o))}
  else{title.textContent='CLEAR OBSTACLE';text.textContent='Clear this object to make room for a nest.';addAction('CLEAR · 20',()=>clearObstacle(o))}}
 function addAction(label,fn){const b=document.createElement('button');b.textContent=label;b.onclick=()=>{play('menu_confirm.mp3');$('#contextMenu').hidden=true;fn()};$('#contextActions').append(b)}
 function addEgg(n){if(save.coins<20)return toast('NOT ENOUGH COINS');save.coins-=20;n.state='incubating';n.created=Date.now();persist();updateHud();play('h_egg_selected.wav');toast('EGG ADDED')}
 function hurry(n){if(save.stars<10)return toast('NOT ENOUGH STARS');save.stars-=10;n.state='ready';persist();updateHud();play('h_marker_1.mp3')}
-function hatch(n){const index=Math.floor(Math.random()*data.prototypeBirds.length),id='bird-'+Date.now();save.objects.push({id,type:'bird',x:n.x+95,y:n.y+25,birdIndex:index});n.state='empty';n.created=Date.now();progressTask(data.prototypeBirds[index]);persist();play('h_bird_hatched_popup.mp3');toast('A NEW BIRD HATCHED!')}
+function openHatchDialog(n){
+ let gender=n.pendingGender||'male',voice=n.pendingVoice||1+Math.floor(Math.random()*HATCHERY_VOICES.length),index=Math.floor(Math.random()*data.prototypeBirds.length);
+ $('#panelTitle').textContent='HATCH YOUR BIRD';const body=$('#panelBody');
+ body.innerHTML='<div class="hatch-choice"><canvas id="hatchPreview" width="300" height="240"></canvas><h3>CHOOSE ONE GENDER</h3><div class="gender-choice"><button data-gender="male">♂ MALE</button><button data-gender="female">♀ FEMALE</button></div><h3>CHOOSE A VOICE PACK</h3><div class="voice-choice"><button id="voicePrev">‹</button><b id="voiceName"></b><button id="voicePlay">▶ PREVIEW</button><button id="voiceNext">›</button></div><p>Gender achievements only count the gender selected here.</p><button class="action" id="confirmHatch">HATCH BIRD</button></div>';
+ const redraw=()=>{const canvas=$('#hatchPreview'),preview=canvas.getContext('2d');preview.clearRect(0,0,canvas.width,canvas.height);drawBird(data.prototypeBirds[index],150,145,.78,time,preview);$$('[data-gender]',body).forEach(button=>button.classList.toggle('active',button.dataset.gender===gender));$('#voiceName').textContent=`VOICE ${voice} OF ${HATCHERY_VOICES.length}`};
+ $$('[data-gender]',body).forEach(button=>button.onclick=()=>{gender=button.dataset.gender;play('h_OK_1.wav');redraw()});
+ $('#voicePrev').onclick=()=>{voice=voice<=1?HATCHERY_VOICES.length:voice-1;play(HATCHERY_VOICES[voice-1]);redraw()};
+ $('#voiceNext').onclick=()=>{voice=voice>=HATCHERY_VOICES.length?1:voice+1;play(HATCHERY_VOICES[voice-1]);redraw()};
+ $('#voicePlay').onclick=()=>play(HATCHERY_VOICES[voice-1]);
+ $('#confirmHatch').onclick=()=>hatch(n,{index,gender,voice});redraw();openPanel();
+}
+function hatch(n,{index,gender,voice}){
+ const object={id:'bird-'+Date.now(),type:'bird',x:n.x+95,y:n.y+25,birdIndex:index,gender,voice};save.objects.push(object);n.state='empty';n.created=Date.now();delete n.pendingGender;delete n.pendingVoice;
+ save.achievements=save.achievements||{maleBirds:0,femaleBirds:0};save.achievements[gender==='female'?'femaleBirds':'maleBirds']++;
+ progressTask(object);persist();closePanel();play('h_bird_hatched_popup.mp3');setTimeout(()=>playBirdVoice(object,.8),350);toast(`${gender.toUpperCase()} BIRD · VOICE ${voice} HATCHED!`)
+}
 function beginMove(o){placement={type:'move',object:o,pointerX:W/2,pointerY:H/2};toast('TAP A NEW LOCATION')}
 function removeUser(o){save.objects=save.objects.filter(x=>x.id!==o.id);persist()}
 function clearObstacle(o){if(save.coins<20)return toast('NOT ENOUGH COINS');save.coins-=20;worldObstacles=worldObstacles.filter(x=>x.id!==o.id);save.removed.push(o.id);persist();updateHud();play('abi_remove_item.mp3');toast('AREA CLEARED')}
@@ -344,7 +394,7 @@ function destroyLevelBody(S,body,award=true){
  if(definition?.specialty==='BOMB')explosionAt(S,body,definition,'h_specialty_explosion.mp3');
  if(award){
   S.score+=body.label==='pig'?5000:(definition?.destroyedScoreInc||500);
-  play(body.label==='pig'?'piglette destroyed.mp3':'wood destroyed a1.mp3',.55);
+  play(materialSound(body,'destroyed'),.62);
  }
  for(const constraint of [...(S.constraints||[])])if(constraint.bodyA===body||constraint.bodyB===body){Matter.World.remove(S.world,constraint);S.constraints=S.constraints.filter(item=>item!==constraint)}
  Matter.World.remove(S.world,body);
@@ -353,6 +403,7 @@ function damageLevelBody(S,body,amount,attacker){
  if(!body?.plugin?.destructible||body.plugin.destroyed||!Number.isFinite(amount)||amount<=0)return;
  body.plugin.health-=amount;
  if(attacker?.label==='playerBird')S.score+=Math.max(0,Math.round(amount*10));
+ const now=performance.now();if(now-(body.plugin.lastDamageSound||0)>180){body.plugin.lastDamageSound=now;play(materialSound(body,'damage'),clamp(.28+amount/40,.3,.72))}
  updateBodyDamageSprite(body);
  if(body.plugin.health<=0)destroyLevelBody(S,body,true);
 }
@@ -369,7 +420,7 @@ function handleLevelCollisions(S,event){
  for(const pair of event.pairs){
   const a=pair.bodyA,b=pair.bodyB;
   for(const [bird,other] of [[a,b],[b,a]])if(bird.label==='playerBird'&&other.label!=='playerBird'){
-   bird.plugin.hasCollided=true;
+   if(!bird.plugin.hasCollided)playRandom(birdSoundPack(bird.plugin.source).collision,.65);bird.plugin.hasCollided=true;
    if(bird.plugin.bombling&&!bird.plugin.exploded){
     bird.plugin.exploded=true;
     explosionAt(S,bird,{explosionForce:20000,explosionRadius:10,explosionDamage:200,explosionDamageRadius:3},'h_specialty_explosion.mp3');
@@ -378,15 +429,31 @@ function handleLevelCollisions(S,event){
   }
   if(now<S.damageArmedAt||S.shotsFired===0)continue;
   const speed=collisionSpeed(pair);
-  if(speed<1.1)continue;
+  if(speed<.75)continue;
+  if(speed>1.8&&now-(S.lastCollisionSound||0)>90){const sounding=a.label==='ground'?b:a;S.lastCollisionSound=now;play(materialSound(sounding,'collision'),clamp(speed/12,.2,.62))}
   const hit=(target,attacker)=>{
    if(!['pig','block'].includes(target.label)||!target.plugin?.destructible)return;
-   const force=speed*(attacker.label==='playerBird'?2.2:1.4),defence=target.plugin.defence||0;
+   const impactBody=attacker.isStatic?target:attacker,mass=Math.sqrt(clamp(Number.isFinite(impactBody.mass)?impactBody.mass:1,.1,25));
+   // KA3D damage is impulse-based. Include body mass so a falling beam or
+   // stone can crush a pig instead of merely nudging it forever.
+   const force=speed*(1.3+mass*1.15),defence=target.plugin.defence||0;
    if(force<=defence)return;
    const factor=attacker.label==='playerBird'?birdDamageMultiplier(attacker,target):1;
    damageLevelBody(S,target,(force-defence)*factor,attacker);
   };
   hit(a,b);hit(b,a);
+ }
+}
+
+function handleActiveCrushing(S,event){
+ if(S.shotsFired===0)return;const now=performance.now();
+ for(const pair of event.pairs){
+  const pig=pair.bodyA.label==='pig'?pair.bodyA:pair.bodyB.label==='pig'?pair.bodyB:null,block=pair.bodyA.label==='block'?pair.bodyA:pair.bodyB.label==='block'?pair.bodyB:null;
+  if(!pig||!block||pig.plugin.destroyed||block.plugin.destroyed||now-(pig.plugin.lastCrushAt||0)<140)continue;
+  const radius=Math.max(block.bounds.max.x-block.bounds.min.x,block.bounds.max.y-block.bounds.min.y)*.25,motion=block.speed+Math.abs(block.angularVelocity)*radius;
+  if(motion<.18)continue;
+  const mass=Math.sqrt(clamp(Number.isFinite(block.mass)?block.mass:1,.1,25)),force=motion*(1.35+mass*1.2),defence=pig.plugin.defence||0;
+  if(force>defence){pig.plugin.lastCrushAt=now;damageLevelBody(S,pig,(force-defence)*.8,block)}
  }
 }
 
@@ -401,7 +468,9 @@ function startLevel(level,number){
  const M=window.Matter,engine=M.Engine.create({enableSleeping:true,gravity:{x:0,y:1,scale:.001}}),world=engine.world,entries=Object.values(level.world);
  engine.positionIterations=10;engine.velocityIterations=8;engine.constraintIterations=4;
  const authoredBirds=entries.filter(object=>physicsData.blocks?.[object.definition]?.controllable).sort((a,b)=>(a.startNumber||99)-(b.startNumber||99));
- const roster=allBirds.slice(0,Math.max(1,authoredBirds.length));
+ // Every hatched bird is usable. The original level birds only provide the
+ // sling position; they no longer discard the rest of the player's flock.
+ const roster=[...allBirds];
  const groundObject=entries.find(object=>object.definition==='Ground'),slingObject=authoredBirds[0]||{x:-12,y:-1},groundWorldY=groundObject?.y??5;
  const xs=entries.filter(object=>Number.isFinite(object.x)&&object.definition!=='Ground').map(object=>object.x),minX=Math.min(slingObject.x-4,...xs),maxX=Math.max(slingObject.x+55,...xs);
  const unit=clamp(W*.76/Math.max(35,maxX-minX),5,16),offsetX=W*.14-slingObject.x*unit,renderScale=unit/20,groundY=H*.82,slingX=offsetX+slingObject.x*unit,slingY=groundY+(slingObject.y-groundWorldY)*unit;
@@ -437,8 +506,9 @@ function startLevel(level,number){
  M.Events.on(engine,'beforeUpdate',()=>{
   for(const body of M.Composite.allBodies(world))body.plugin.preVelocity={x:body.velocity.x,y:body.velocity.y};
  });
- M.Events.on(engine,'collisionStart',event=>handleLevelCollisions(activeLevel,event));
+ M.Events.on(engine,'collisionStart',event=>handleLevelCollisions(activeLevel,event));M.Events.on(engine,'collisionActive',event=>handleActiveCrushing(activeLevel,event));
  loadNextBird();
+ if(!save.tutorial.slingShown){save.tutorial.slingShown=true;persist();setTimeout(()=>{if(slingshot===activeLevel)toast('DRAG BACK AND RELEASE · TAP IN FLIGHT FOR SPECIALTY')},2600)}
 }
 function makePlayerBody(S,source,x,y,radius,velocity,extra={}){
  const M=Matter,shapeDefinition=physicsData.blocks?.[originalBirdDefinition(source,false)]||physicsData.blocks.RedBird,colorDefinition=physicsData.blocks?.[originalBirdDefinition(source,true)]||shapeDefinition;
@@ -471,7 +541,7 @@ function loadNextBird(){
  }
  const source=S.roster[S.queueIndex++];
  S.current=makePlayerBody(S,source,S.sling.x,S.sling.y,null,null);
- S.dragging=false;S.special=false;S.launchedAt=0;
+ S.dragging=false;S.special=false;S.launchedAt=0;playRandom(['bird next military a1.mp3','bird next military a2.mp3','bird next military a3.mp3'],.45);setTimeout(()=>{if(slingshot===S&&S.current?.plugin.source===source)playBirdVoice(source,.48)},180);
 }
 function launchBird(x,y){
  const S=slingshot,M=Matter,b=S?.current;
@@ -483,7 +553,7 @@ function launchBird(x,y){
  const fraction=clamp(d/S.pullRadius,0,1),speed=.77*S.unit*fraction;
  M.Body.setVelocity(b,{x:d?-dx/d*speed:0,y:d?-dy/d*speed:0});
  S.dragging=false;S.launchedAt=performance.now();S.shotsFired++;
- play('bird shot-a1.mp3',.7);
+ playRandom(['bird shot-a1.mp3','bird shot-a2.mp3','bird shot-a3.mp3'],.65);play(birdSoundPack(b.plugin.source).launch,.72);setTimeout(()=>playBirdVoice(b.plugin.source,.5),90);
  const bird=getBird(b.plugin.source);
  if(bird.shape==='BLACK'&&bird.color==='YELLOW')play(Math.random()<.5?'h_specialty_yell.mp3':'h_specialty_yell2.mp3');
 }
@@ -584,6 +654,7 @@ function renderSlingshot(){
  const S=slingshot;
  renderLevelTheme(S);
  ctx.save();ctx.translate(-S.cameraX,0);
+ const waiting=S.roster.slice(S.queueIndex),visibleWaiting=waiting.slice(0,12);visibleWaiting.forEach((source,index)=>drawBird(getBird(source),S.sling.x-(index+1)*Math.max(24,38*S.renderScale),S.sling.y+24*S.renderScale,.25*S.renderScale,time,ctx));
  sprites.draw('SLING_SHOT_01_BACK',S.sling.x,S.sling.y+30*S.renderScale,S.renderScale,0,1,ctx);
  if(S.current?.isStatic){ctx.strokeStyle='#4b2116';ctx.lineWidth=Math.max(4,8*S.renderScale);ctx.beginPath();ctx.moveTo(S.sling.x+10*S.renderScale,S.sling.y+5*S.renderScale);ctx.lineTo(S.current.position.x,S.current.position.y);ctx.stroke()}
  for(const body of Matter.Composite.allBodies(S.world)){
@@ -606,7 +677,7 @@ function renderSlingshot(){
  ctx.restore();
  if(S.intro){ctx.fillStyle='#063e56cc';ctx.fillRect(W/2-105,H-55,210,36);ctx.fillStyle='#fff';ctx.font='900 15px Arial';ctx.textAlign='center';ctx.fillText('TAP TO SKIP CAMERA',W/2,H-31);ctx.textAlign='start'}
  const world=S.level.pack==='goldeneggs1'?'GOLDEN EGG':`WORLD ${packNumber(S.level.pack)}-${S.number}`;
- ctx.textAlign='start';ctx.fillStyle='#fff';ctx.strokeStyle='#173845';ctx.lineWidth=5;ctx.font='900 23px Arial';ctx.strokeText(`${world}  ·  ${S.level.id}  ·  SCORE ${S.score}`,90,43);ctx.fillText(`${world}  ·  ${S.level.id}  ·  SCORE ${S.score}`,90,43);
+ ctx.textAlign='start';ctx.fillStyle='#fff';ctx.strokeStyle='#173845';ctx.lineWidth=5;ctx.font='900 23px Arial';ctx.strokeText(`${world}  ·  ${S.level.id}  ·  SCORE ${S.score}  ·  BIRDS ${Math.max(0,S.roster.length-S.shotsFired)}`,90,43);ctx.fillText(`${world}  ·  ${S.level.id}  ·  SCORE ${S.score}  ·  BIRDS ${Math.max(0,S.roster.length-S.shotsFired)}`,90,43);
  ctx.beginPath();ctx.arc(42,42,29,0,Math.PI*2);ctx.fillStyle='#078da9';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=4;ctx.stroke();ctx.fillStyle='#fff';ctx.font='900 26px Arial';ctx.fillText('‹',34,50);
 }
 function showLevelResult(win,stars){
@@ -625,25 +696,58 @@ function showLevelResult(win,stars){
 function exitLevel(){closePanel();slingshot=null;screen='world';$('#hud').hidden=false;setMusic('ambient')}
 function updateHud(){$('#stars').textContent=save.stars;$('#coins').textContent=save.coins;$('#soundButton').textContent=soundOn?'♫':'×'}
 
-function progressTask(bird){const tier=data.tasks[save.taskTier];if(!tier)return;tier.tasks.forEach((t,i)=>{if(t.taskType==='HATCH_ANY_KIND_OF_BIRD')save.taskProgress[i]++;else if(t.taskType==='HATCH_BIRD_OF_COLOR'&&(bird.shape===t.identifier||bird.color===t.identifier))save.taskProgress[i]++;else if(t.taskType==='HATCH_BIRD_OF_GENDER')save.taskProgress[i]++;else if(t.taskType==='HATCH_BIRD_WITH_ACCESSORY'&&(bird.sprites||[]).some(s=>String(s.sprite).includes('ACCESSORY')))save.taskProgress[i]++});save.taskProgress=save.taskProgress.map((v,i)=>Math.min(v,tier.tasks[i].amount))}
+const TUTORIAL_STEPS=[
+ {title:'WELCOME TO HATCHERY ISLAND',icon:'🏝️',text:'Drag the island with one finger or the mouse. Pinch or use the zoom buttons to see the full 70×70 Hatchery map.'},
+ {title:'BUILD A BIRD',icon:'🥚',text:'Select an empty nest, buy an egg, wait for its timer or use Hurry, then choose CHOOSE & HATCH.'},
+ {title:'GENDER AND VOICE',icon:'♂ ♀ 🔊',text:'Choose exactly one gender and one of the 12 original Hatchery voice packs. Only that selected gender advances its achievement.'},
+ {title:'YOUR WHOLE FLOCK',icon:'🐦',text:'Every bird in MY SLINGSHOT FLOCK is queued for level play. Waiting birds stand behind the sling and enter one after another.'},
+ {title:'ORIGINAL LEVEL PACKS',icon:'🎯',text:'Open PLAY, swipe through all 18 world packs plus Golden Eggs, then choose any of the 325 distinct IPA levels.'},
+ {title:'SLINGSHOT AND PHYSICS',icon:'🪃',text:'Drag the bird backward and release. Falling wood, stone and glass can crush pigs. Tap a flying bird for its specialty; drag after the specialty to move the camera.'}
+];
+function showTutorial(step=0){
+ step=clamp(step,0,TUTORIAL_STEPS.length-1);const item=TUTORIAL_STEPS[step];$('#panelTitle').textContent=`TUTORIAL ${step+1} / ${TUTORIAL_STEPS.length}`;const body=$('#panelBody');
+ body.innerHTML=`<div class="tutorial-card"><div class="tutorial-icon">${item.icon}</div><h3>${item.title}</h3><p>${item.text}</p><div class="tutorial-dots">${TUTORIAL_STEPS.map((_,index)=>index===step?'●':'○').join(' ')}</div><button class="action" id="tutorialSkip">SKIP</button><button class="action" id="tutorialNext">${step===TUTORIAL_STEPS.length-1?'DONE':'NEXT'}</button></div>`;
+ $('#tutorialSkip').onclick=()=>{save.tutorial.completed=true;persist();closePanel()};$('#tutorialNext').onclick=()=>{if(step===TUTORIAL_STEPS.length-1){save.tutorial.completed=true;persist();closePanel()}else showTutorial(step+1)};openPanel();
+}
+function progressTask(object){
+ const tier=data.tasks[save.taskTier],bird=getBird(object);if(!tier||!bird)return;
+ tier.tasks.forEach((task,index)=>{
+  let matches=false;
+  if(task.taskType==='HATCH_ANY_KIND_OF_BIRD')matches=true;
+  else if(task.taskType==='HATCH_BIRD_OF_COLOR')matches=bird.shape===task.identifier;
+  else if(task.taskType==='HATCH_BIRD_OF_GENDER')matches=object.gender===task.identifier;
+  else if(task.taskType==='HATCH_BIRD_WITH_ACCESSORY')matches=(bird.sprites||[]).some(part=>String(part.sprite).includes('ACCESSORY'));
+  if(matches)save.taskProgress[index]=(save.taskProgress[index]||0)+1;
+ });
+ save.taskProgress=save.taskProgress.map((value,index)=>Math.min(value,tier.tasks[index].amount));
+}
 
-function showBirds(){const body=$('#panelBody');$('#panelTitle').textContent='MY BIRDS';body.innerHTML='<div class="bird-grid"></div>';const grid=$('.bird-grid',body);const birds=save.objects.filter(o=>o.type==='bird');if(!birds.length)body.innerHTML='<p>Hatch an egg to add your first bird.</p>';for(const o of birds){const card=document.createElement('button');card.className='bird-card';card.innerHTML='<canvas width="180" height="180"></canvas><b>BIRD '+(o.birdIndex+1)+'</b>';card.onclick=()=>openBirdDesigner(o);grid.append(card);const c=$('canvas',card),cctx=c.getContext('2d');drawBird(getBird(o),90,105,.72,time,cctx)}openPanel()}
-function showTasks(){const tier=data.tasks[save.taskTier]||data.tasks.at(-1);$('#panelTitle').textContent='HATCHERY TASKS';const body=$('#panelBody');body.innerHTML='<div class="task-list"></div>';const list=$('.task-list',body);tier.tasks.forEach((t,i)=>{const done=(save.taskProgress[i]||0)>=t.amount,el=document.createElement('div');el.className='task-card '+(done?'done':'');el.innerHTML=`<b>${done?'✓':'○'} ${t.text}</b><p>${save.taskProgress[i]||0} / ${t.amount}</p>`;list.append(el)});if(tier.tasks.every((t,i)=>(save.taskProgress[i]||0)>=t.amount)){const b=document.createElement('button');b.className='action';b.textContent=`COLLECT ${tier.rewardAmount} ★`;b.onclick=()=>{save.stars+=tier.rewardAmount;save.taskTier=Math.min(save.taskTier+1,data.tasks.length-1);save.taskProgress=[0,0,0];persist();updateHud();showTasks();play('h_fanfare_1.wav')};body.append(b)}openPanel()}
+function showBirds(){
+ const body=$('#panelBody');$('#panelTitle').textContent='MY SLINGSHOT FLOCK';body.innerHTML='<p class="flock-note">Every bird shown here is queued in Angry Birds levels. Tap a card to customize it; use the speaker to hear its saved voice.</p><div class="bird-grid"></div>';const grid=$('.bird-grid',body),birds=save.objects.filter(object=>object.type==='bird');
+ if(!birds.length)body.innerHTML='<p>Hatch an egg to add your first bird. No starter birds are granted.</p>';
+ for(const object of birds){const card=document.createElement('div');card.className='bird-card';card.innerHTML=`<button class="bird-open"><canvas width="180" height="180"></canvas><b>BIRD ${object.birdIndex+1}</b><small>${object.gender==='female'?'♀ FEMALE':'♂ MALE'} · VOICE ${object.voice||1}</small></button><button class="voice-preview" title="Play this bird voice">🔊</button>`;$('.bird-open',card).onclick=()=>openBirdDesigner(object);$('.voice-preview',card).onclick=()=>playBirdVoice(object);grid.append(card);const preview=$('canvas',card).getContext('2d');drawBird(getBird(object),90,105,.72,time,preview)}openPanel();
+}
+function showTasks(){
+ const tier=data.tasks[save.taskTier]||data.tasks.at(-1),achievements=save.achievements||{maleBirds:0,femaleBirds:0};$('#panelTitle').textContent='TASKS & ACHIEVEMENTS';const body=$('#panelBody');
+ body.innerHTML=`<div class="achievement-summary"><div><b>♂ MALE BIRDS</b><strong>${achievements.maleBirds||0}</strong></div><div><b>♀ FEMALE BIRDS</b><strong>${achievements.femaleBirds||0}</strong></div></div><p class="achievement-note">Only the gender selected in the hatch dialog is counted.</p><div class="task-list"></div>`;
+ const list=$('.task-list',body);tier.tasks.forEach((task,index)=>{const done=(save.taskProgress[index]||0)>=task.amount,card=document.createElement('div');card.className='task-card '+(done?'done':'');card.innerHTML=`<b>${done?'✓':'○'} ${task.text}</b><p>${save.taskProgress[index]||0} / ${task.amount}</p>`;list.append(card)});
+ if(tier.tasks.every((task,index)=>(save.taskProgress[index]||0)>=task.amount)){const button=document.createElement('button');button.className='action';button.textContent=`COLLECT ${tier.rewardAmount} ★`;button.onclick=()=>{save.stars+=tier.rewardAmount;save.taskTier=Math.min(save.taskTier+1,data.tasks.length-1);save.taskProgress=[0,0,0];persist();updateHud();showTasks();play('h_fanfare_1.wav')};body.append(button)}openPanel();
+}
 function openBirdDesigner(o){selected=o;const bird=o.custom||(o.custom=JSON.parse(JSON.stringify(data.prototypeBirds[o.birdIndex])));$('#panelTitle').textContent='BIRD DESIGNER';const body=$('#panelBody');body.innerHTML='<canvas id="birdPreview" width="380" height="280" style="display:block;margin:auto;max-width:100%;background:radial-gradient(circle,#c8f5f4,#4cb5cb);border-radius:22px"></canvas><div style="text-align:center"><button class="action" data-cycle="body">BODY</button><button class="action" data-cycle="eyes">EYES</button><button class="action" data-cycle="beak">BEAK</button><button class="action" data-cycle="hat">HAT</button></div>';const redraw=()=>{const c=$('#birdPreview'),x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);drawBird(bird,190,165,1.1,time,x)};redraw();$$('[data-cycle]',body).forEach(btn=>btn.onclick=()=>{const types=data.birdDefinitions.DefaultIndexes,kind=btn.dataset.cycle;if(kind==='body'){bird.shape=types[(types.indexOf(bird.shape)+1)%types.length];bird.color=types[(types.indexOf(bird.color)+2)%types.length];bird.sprite=`BIRD_BODY_${bird.shape}_${bird.color}`;if(!sprites.meta(bird.sprite))bird.sprite='BIRD_BODY_RED_RED'}else if(kind==='eyes')bird.eyes=types[(types.indexOf(bird.eyes)+1)%types.length];else if(kind==='beak')bird.beak=types[(types.indexOf(bird.beak)+1)%types.length];else{bird.sprites=bird.sprites||[];bird.sprites.push({sprite:data.birdDefinitions.Sprites.AccessoryTop[Math.floor(Math.random()*data.birdDefinitions.Sprites.AccessoryTop.length)],x:0,y:-75,scale:.7,angle:0})}play('h_marker_2.mp3');redraw();persist()});openPanel()}
 function openPanel(){$('#contextMenu').hidden=true;$('#panel').hidden=false}function closePanel(){$('#panel').hidden=true}
 
 function resetPointerState(){pointers.clear();camera.drag=false;camera.pinch=0;camera.moved=false;if(slingshot){slingshot.dragging=false;slingshot.cameraDragging=false}}
-canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(screen==='slingshot'&&slingshot){if(e.clientX<82&&e.clientY<82){exitLevel();return}const S=slingshot;if(S.intro){S.intro=false;S.cameraX=S.birdCameraX;return}const b=S.current,wx=e.clientX+S.cameraX;if(b?.isStatic&&Math.hypot(wx-b.position.x,e.clientY-b.position.y)<Math.max(48,S.pullRadius))S.dragging=true;else if(b&&!b.isStatic&&!S.special)activateSpecial();else{S.cameraDragging=true;S.cameraDragStart=e.clientX;S.cameraDragBase=S.cameraX}return}camera.drag=true;camera.startX=e.clientX;camera.startY=e.clientY;camera.baseX=camera.x;camera.baseY=camera.y;camera.moved=pointers.size>1;if(screen==='title'&&soundOn&&audio.title.paused)setMusic('title')});
+canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(screen==='slingshot'&&slingshot){if(e.clientX<82&&e.clientY<82){exitLevel();return}const S=slingshot;if(S.intro){S.intro=false;S.cameraX=S.birdCameraX;return}const b=S.current,wx=e.clientX+S.cameraX;if(b?.isStatic&&Math.hypot(wx-b.position.x,e.clientY-b.position.y)<Math.max(48,S.pullRadius)){S.dragging=true;play(birdSoundPack(b.plugin.source).select,.62)}else if(b&&!b.isStatic&&!S.special)activateSpecial();else{S.cameraDragging=true;S.cameraDragStart=e.clientX;S.cameraDragBase=S.cameraX}return}camera.drag=true;camera.startX=e.clientX;camera.startY=e.clientY;camera.baseX=camera.x;camera.baseY=camera.y;camera.moved=pointers.size>1;if(screen==='title'&&soundOn&&audio.title.paused)setMusic('title')});
 canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(screen==='slingshot'&&slingshot){const S=slingshot;if(S.dragging&&S.current){const dx=e.clientX+S.cameraX-S.sling.x,dy=e.clientY-S.sling.y,d=Math.hypot(dx,dy),r=Math.min(S.pullRadius,d);Matter.Body.setPosition(S.current,{x:S.sling.x+(d?dx/d*r:0),y:S.sling.y+(d?dy/d*r:0)});return}else if(S.cameraDragging){S.cameraX=clamp(S.cameraDragBase-(e.clientX-S.cameraDragStart),0,S.maxCameraX);return}}if(placement){placement.pointerX=e.clientX;placement.pointerY=e.clientY}if(screen!=='world')return;if(pointers.size===1&&camera.drag){const dx=e.clientX-camera.startX,dy=e.clientY-camera.startY;if(Math.hypot(dx,dy)>5)camera.moved=true;camera.x=clamp(camera.baseX-dx/camera.zoom,100,13600);camera.y=clamp(camera.baseY-dy/camera.zoom,100,6700)}else if(pointers.size>=2){camera.moved=true;const ps=[...pointers.values()].slice(0,2),d=Math.hypot(ps[0].x-ps[1].x,ps[0].y-ps[1].y);if(!camera.pinch){camera.pinch=d;camera.pinchZoom=camera.zoom}else camera.zoom=clamp(camera.pinchZoom*d/camera.pinch,.38,1.45)}});
 function finishPointer(e,cancelled=false){const wasMoved=camera.moved;if(screen==='slingshot'&&slingshot?.dragging){if(cancelled&&slingshot.current)Matter.Body.setPosition(slingshot.current,slingshot.sling);else if(slingshot.current)launchBird(slingshot.current.position.x,slingshot.current.position.y);slingshot.dragging=false}if(slingshot)slingshot.cameraDragging=false;pointers.delete(e.pointerId);if(screen==='world'&&pointers.size===1){const p=[...pointers.values()][0];camera.startX=p.x;camera.startY=p.y;camera.baseX=camera.x;camera.baseY=camera.y;camera.pinch=0;camera.moved=true}else if(!pointers.size){camera.drag=false;camera.pinch=0;if(!cancelled&&!wasMoved&&screen!=='slingshot')handleTap(e.clientX,e.clientY);camera.moved=false}}
 canvas.addEventListener('pointerup',e=>finishPointer(e,false));canvas.addEventListener('pointercancel',e=>finishPointer(e,true));canvas.addEventListener('lostpointercapture',e=>{if(pointers.has(e.pointerId))finishPointer(e,true)});addEventListener('blur',resetPointerState);document.addEventListener('visibilitychange',()=>{if(document.hidden)resetPointerState()});
 canvas.addEventListener('wheel',e=>{if(screen!=='world')return;e.preventDefault();camera.zoom=clamp(camera.zoom*Math.exp(-e.deltaY*.001),.38,1.45)},{passive:false});
 
 $$('.tools button').forEach(b=>b.onclick=()=>{const t=b.dataset.tool;play('menu_select.mp3');if(t==='nest'){placement={type:'nest',pointerX:W/2,pointerY:H/2};$$('.tools button').forEach(x=>x.classList.toggle('active',x===b));toast('TAP THE MAP TO PLACE A NEST')}else if(t==='egg'){const nest=save.objects.find(x=>x.type==='nest'&&x.state==='empty');if(nest)openContext(nest);else toast('PLACE OR SELECT AN EMPTY NEST')}else if(t==='birds')showBirds();else if(t==='tasks')showTasks();else showLevels()});
-$('#homeButton').onclick=()=>{screen='title';$('#hud').hidden=true;setMusic('title');play('menu_back.mp3')};$('#soundButton').onclick=()=>{soundOn=!soundOn;save.sound=soundOn;persist();if(!soundOn)Object.values(audio).forEach(a=>a.pause());else setMusic(screen==='world'?'ambient':'title');updateHud()};$('#zoomIn').onclick=()=>camera.zoom=clamp(camera.zoom*1.15,.38,1.45);$('#zoomOut').onclick=()=>camera.zoom=clamp(camera.zoom/1.15,.38,1.45);$('.close-context').onclick=()=>$('#contextMenu').hidden=true;$('#closePanel').onclick=closePanel;
+$('#homeButton').onclick=()=>{screen='title';$('#hud').hidden=true;setMusic('title');play('menu_back.mp3')};$('#tutorialButton').onclick=()=>showTutorial(0);$('#soundButton').onclick=()=>{soundOn=!soundOn;save.sound=soundOn;persist();if(!soundOn)Object.values(audio).filter(Boolean).forEach(a=>a.pause());else setMusic(screen==='world'?'ambient':'title');updateHud()};$('#zoomIn').onclick=()=>camera.zoom=clamp(camera.zoom*1.15,.38,1.45);$('#zoomOut').onclick=()=>camera.zoom=clamp(camera.zoom/1.15,.38,1.45);$('.close-context').onclick=()=>$('#contextMenu').hidden=true;$('#closePanel').onclick=closePanel;
 
-function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;time+=dt;ctx.setTransform(DPR,0,0,DPR,0,0);if(screen==='title')renderTitle();else if(screen==='world')renderWorld();else if(screen==='slingshot'){updateSlingshot(dt);renderSlingshot()}requestAnimationFrame(frame)}
-window.__hatcheryDebug=()=>({screen,atlasesLoaded:atlasImages.size,level:slingshot?.level?.id||null,pack:slingshot?.level?.pack||null,cameraX:slingshot?.cameraX||0,currentBird:slingshot?.current?{x:slingshot.current.position.x,y:slingshot.current.position.y,speed:slingshot.current.speed,static:slingshot.current.isStatic,sleeping:slingshot.current.isSleeping}:null,goals:slingshot?Matter.Composite.allBodies(slingshot.world).filter(body=>body.label==='pig').length:0,objects:slingshot?Matter.Composite.allBodies(slingshot.world).length:0,joints:slingshot?.constraints?.length||0});
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;time+=dt;ctx.setTransform(DPR,0,0,DPR,0,0);if(screen==='title')renderTitle();else if(screen==='world'){updateWorldAmbience(now);renderWorld()}else if(screen==='slingshot'){updateSlingshot(dt);renderSlingshot()}requestAnimationFrame(frame)}
+window.__hatcheryDebug=()=>({screen,atlasesLoaded:atlasImages.size,level:slingshot?.level?.id||null,pack:slingshot?.level?.pack||null,cameraX:slingshot?.cameraX||0,currentBird:slingshot?.current?{x:slingshot.current.position.x,y:slingshot.current.position.y,speed:slingshot.current.speed,static:slingshot.current.isStatic,sleeping:slingshot.current.isSleeping}:null,goals:slingshot?Matter.Composite.allBodies(slingshot.world).filter(body=>body.label==='pig').length:0,objects:slingshot?Matter.Composite.allBodies(slingshot.world).length:0,joints:slingshot?.constraints?.length||0,flock:slingshot?.roster?.length||0,queueIndex:slingshot?.queueIndex||0});
 boot();
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 })();

@@ -1,5 +1,5 @@
-const CACHE='hatchery-island-v6';
-const SHELL=['./','index.html','styles.css?build=6','game.js?build=6','assets/matter.min.js','manifest.webmanifest','assets/images/app-icon-192.png','assets/images/archive-screenshot.jpeg'];
+const CACHE='hatchery-island-v7';
+const SHELL=['./','index.html','styles.css?build=7','game.js?build=7','assets/matter.min.js','manifest.webmanifest','assets/images/app-icon-192.png','assets/images/archive-screenshot.jpeg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{
