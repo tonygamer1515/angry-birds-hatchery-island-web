@@ -47,6 +47,9 @@ All 462 `.lua` resources were decrypted successfully using the original Angry Bi
 - Hatched custom bird becomes the level-launch projectile.
 - Pack 1 level loads original blocks and pigs with no browser errors.
 - Slingshot drag/release and Matter.js simulation verified.
+- Pointer cancellation, lost capture, blur/background recovery and post-pinch single-pointer panning handled.
+- Level camera now fits each Lua level’s authored coordinate extent and follows launched birds.
+- All 325 converted levels are exposed through the episode selector.
 
 ## Not yet declared complete
 

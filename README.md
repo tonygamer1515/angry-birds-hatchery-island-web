@@ -13,7 +13,7 @@ This is an active preservation port. The playable Hatchery systems are available
 - Original Angry Birds HD/Hatchery title presentation.
 - Exact 70×70 isometric Hatchery Island map.
 - 6,000+ original map tiles, cliffs, water, foliage, rocks and animated decoration objects.
-- Touch/mouse camera panning and pinch/wheel zoom.
+- Touch/mouse camera panning and pinch/wheel zoom with pointer-cancel, lost-capture, app-backgrounding and multi-touch recovery so the map cannot become stuck.
 - Original obstacle clearing and persistent world saves.
 - Place, move and remove nests.
 - Add eggs, wait for the original timer, spend stars to hurry, and hatch birds.
