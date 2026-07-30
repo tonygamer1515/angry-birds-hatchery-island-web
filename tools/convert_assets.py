@@ -27,6 +27,15 @@ def decode_pvr(path: Path) -> Image.Image:
                            round((value & 31) * 255 / 31), 255))
     elif fmt == 22 and bpp == 8:  # intensity/grayscale
         pixels = [(value, value, value, 255) for value in data[:width * height]]
+    elif fmt in (24, 25):  # PVRTC 2bpp / 4bpp
+        try:
+            import texture2ddecoder
+        except ImportError as exc:
+            raise ValueError('PVRTC conversion requires texture2ddecoder') from exc
+        is_2bpp = fmt == 24
+        level_size = max(width, 16 if is_2bpp else 8) * max(height, 8) * (2 if is_2bpp else 4) // 8
+        decoded = texture2ddecoder.decode_pvrtc(bytes(data[:level_size]), width, height, is_2bpp)
+        return Image.frombytes('RGBA', (width, height), decoded)
     else:
         raise ValueError(f'Unsupported PVR format {fmt}, {bpp} bpp: {path}')
     image = Image.new('RGBA', (width, height))
@@ -65,7 +74,11 @@ def main() -> None:
     selected = list((data / 'hatchery').rglob('*.pvr'))
     selected += [data / 'images/1024x768' / name for name in (
         'BACKGROUNDS_MAIN_1.pvr', 'MENU_ELEMENTS_1.pvr', 'BUTTONS_SHEET_1.pvr',
-        'BUTTONS_HATCHERY_1.pvr', 'MENU_HATCHERY_1.pvr', 'LEVELSELECTION_HATCHERY_1.pvr')]
+        'BUTTONS_HATCHERY_1.pvr', 'MENU_HATCHERY_1.pvr', 'LEVELSELECTION_HATCHERY_1.pvr',
+        'INGAME_BIRDS_1.pvr', 'INGAME_BIRDS_2.pvr', 'INGAME_BLOCKS_1.pvr', 'INGAME_BLOCKS_2.pvr',
+        'INGAME_GROUNDS_1.pvr', 'INGAME_SKIES_1.pvr', 'INGAME_SKIES_2.pvr', 'INGAME_SKIES_3.pvr',
+        'LEVELSELECTION_SHEET_1.pvr', 'LEVELSELECTION_SHEET_2.pvr', 'LEVELSELECTION_SHEET_3.pvr', 'LEVELSELECTION_SHEET_4.pvr',
+        'MENU_RESULT_SCREEN_1.pvr', 'THEME_01_PARALLAX_1.pvr', 'THEME_01_THEME_GROUND_1.pvr')]
     selected += [data / 'images/1024x768' / name for name in (
         'MENU_ELEMENTS_2.png', 'MENU_ELEMENTS_3.png', 'POPUPS_SHEET_1.png')]
 

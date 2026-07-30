@@ -30,6 +30,10 @@ All 462 `.lua` resources were decrypted successfully using the original Angry Bi
 | `BirdDesigner` | Interactive body/eyes/beak/accessory panel |
 | `TaskManager` | Four recovered task tiers and rewards |
 | `hatcheryAnimations` | Idle sway, blink, wobble and timer motion |
+| Hatchery selected-bird list | Active slingshot roster |
+| 325 level Lua tables | Browser level database |
+| Native rigid-body world | Matter.js circles, boxes, materials and collisions |
+| Bird specialty dispatch | Speed, explosion, split, boomerang and egg drop |
 | KA3D audio calls | HTML Audio using original files |
 
 ## Verified tests
@@ -39,6 +43,10 @@ All 462 `.lua` resources were decrypted successfully using the original Angry Bi
 - Nest → egg → hurry → hatch flow succeeds.
 - Currency deductions and local persistence verified.
 - Bird object appears after hatch.
+- Fresh/legacy saves no longer receive two synthetic starter birds.
+- Hatched custom bird becomes the level-launch projectile.
+- Pack 1 level loads original blocks and pigs with no browser errors.
+- Slingshot drag/release and Matter.js simulation verified.
 
 ## Not yet declared complete
 

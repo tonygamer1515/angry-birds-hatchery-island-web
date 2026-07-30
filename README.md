@@ -20,7 +20,11 @@ This is an active preservation port. The playable Hatchery systems are available
 - 216 prototype bird combinations recovered from `hatcheryBirdsSaves.lua`.
 - Layered body, eyes, beak and accessory rendering, blinking and idle motion.
 - Bird designer, bird inventory and four recovered task tiers.
-- Original Hatchery ambient audio, fanfares, UI effects and title music.
+- Hatchery birds form the active slingshot roster—there are no pre-granted starter birds after save migration.
+- All 325 bundled level Lua files converted to browser data with zero conversion failures.
+- Matter.js slingshot physics, original level structures, pigs, block materials, damage, scoring and three-star results.
+- Hatchery bird specialties mapped into level play: speed, explosion, split, boomerang and egg-drop abilities.
+- Original Hatchery ambient audio, fanfares, UI effects, level sounds and title music.
 - Responsive iPad landscape UI and service-worker caching.
 
 ## Source recovery
@@ -57,7 +61,7 @@ Then open <http://localhost:8080>.
 - Remaining Hatchery dialogs and exact menu panel layouts.
 - Egg Painter canvas and saved egg textures.
 - Nest and egg accessory designers.
-- Bird-to-level selection bridge.
-- Native Angry Birds physics/slingshot gameplay and all bundled level packs.
+- Exact episode-specific parallax/ground artwork for later packs; all 325 converted levels are already exposed through the episode selector.
+- Remaining bird-specialty edge cases and native camera timing.
 - Exact KA3D composite-sprite definitions and remaining animation edge cases.
 - Full regression test pass, iPad performance pass, then the new public GitHub repository and Pages deployment.
