@@ -62,7 +62,7 @@ Then open <http://localhost:8080>.
 - Remaining Hatchery dialogs and exact menu panel layouts.
 - Egg Painter canvas and saved egg textures.
 - Nest and egg accessory designers.
-- Exact episode-specific parallax/ground artwork for later packs; all 325 converted levels are already exposed through the episode selector.
-- Remaining bird-specialty edge cases and native camera timing.
+- Remaining composite-sprite placement refinements for some multi-part parallax decorations; every theme's underlying original sheets are now converted and selected.
+- Remaining bird-specialty edge cases and exact vertical/zoom camera interpolation.
 - Exact KA3D composite-sprite definitions and remaining animation edge cases.
 - Full regression test pass, iPad performance pass, then the new public GitHub repository and Pages deployment.

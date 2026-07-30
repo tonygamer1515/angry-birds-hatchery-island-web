@@ -55,7 +55,11 @@ All 462 `.lua` resources were decrypted successfully using the original Angry Bi
 - Slingshot pull length and launch impulse now use the original 5.4-unit maximum and KA3D force conversion.
 - Pointer cancellation, lost capture, blur/background recovery and post-pinch single-pointer panning handled.
 - Level camera now fits each Lua level’s authored coordinate extent and follows launched birds.
-- All 325 converted levels are exposed through the episode selector.
+- All 18 normal worlds and Golden Eggs are exposed through the original-art pack selector.
+- Automated browser pass opened the first authored level from all 19 packs with different IDs/object counts and no console errors.
+- Joint-heavy `pack8/LevelP3_313` loaded 195 bodies and all four native constraints.
+- Pointer drag/release test confirms the bird wakes from the sling, remains finite, flies, and activates camera follow.
+- Lazy three-atlas loading removes the mobile-Safari all-at-once decode failure that produced `LOAD ERROR: undefined`.
 
 ## Not yet declared complete
 

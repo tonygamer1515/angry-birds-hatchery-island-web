@@ -71,16 +71,22 @@ def main() -> None:
     atlas_out = args.output / 'assets' / 'atlases'
     atlas_out.mkdir(parents=True, exist_ok=True)
 
+    images = data / 'images/1024x768'
     selected = list((data / 'hatchery').rglob('*.pvr'))
-    selected += [data / 'images/1024x768' / name for name in (
+    selected += [images / name for name in (
         'BACKGROUNDS_MAIN_1.pvr', 'MENU_ELEMENTS_1.pvr', 'BUTTONS_SHEET_1.pvr',
         'BUTTONS_HATCHERY_1.pvr', 'MENU_HATCHERY_1.pvr', 'LEVELSELECTION_HATCHERY_1.pvr',
         'INGAME_BIRDS_1.pvr', 'INGAME_BIRDS_2.pvr', 'INGAME_BLOCKS_1.pvr', 'INGAME_BLOCKS_2.pvr',
         'INGAME_GROUNDS_1.pvr', 'INGAME_SKIES_1.pvr', 'INGAME_SKIES_2.pvr', 'INGAME_SKIES_3.pvr',
         'LEVELSELECTION_SHEET_1.pvr', 'LEVELSELECTION_SHEET_2.pvr', 'LEVELSELECTION_SHEET_3.pvr', 'LEVELSELECTION_SHEET_4.pvr',
-        'MENU_RESULT_SCREEN_1.pvr', 'THEME_01_PARALLAX_1.pvr', 'THEME_01_THEME_GROUND_1.pvr')]
-    selected += [data / 'images/1024x768' / name for name in (
+        'MENU_RESULT_SCREEN_1.pvr')]
+    # Every shipped gameplay theme, including cave and birthday.  The old
+    # converter selected only THEME_01 and made all worlds look identical.
+    selected += sorted(images.glob('THEME_*_PARALLAX*.pvr'))
+    selected += sorted(images.glob('THEME_*_THEME_GROUND*.pvr'))
+    selected += [images / name for name in (
         'MENU_ELEMENTS_2.png', 'MENU_ELEMENTS_3.png', 'POPUPS_SHEET_1.png')]
+    selected = list(dict.fromkeys(selected))
 
     atlas_urls = {}
     for source in selected:

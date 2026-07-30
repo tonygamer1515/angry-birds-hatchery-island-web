@@ -93,9 +93,18 @@ def main():
                 'id': path.stem,
                 'pack': pack,
                 'order': authored_order if authored_order is not None else natural_number(path.stem),
+                'theme': globals_table.theme,
+                'physicsToWorld': globals_table.physicsToWorld or 20,
                 'world': world,
+                'joints': convert(globals_table.joints) or {},
                 'counts': convert(globals_table.counts),
-                'camera': convert(globals_table.castleCameraData),
+                'camera': {
+                    'castle': convert(globals_table.castleCameraData),
+                    'bird': convert(globals_table.birdCameraData),
+                },
+                'themeSprites': convert(globals_table.themeSprites) or {},
+                'particles': convert(globals_table.levelParticles) or {},
+                'doNotWaitForMovingObjects': bool(globals_table.doNotWaitForMovingObjects),
                 'stars': star_limits.get(path.stem) or ({'silverScore': 1000, 'goldScore': 2000} if path.stem.startswith('LevelGE_') else None),
             })
         except Exception as exc:

@@ -7,7 +7,7 @@ let W=0,H=0,DPR=1,uiScale=1,registry,data,levelsData,levelsPromise,physicsData,a
 const TILE_W=196,TILE_H=97,MAP_ORIGIN_X=70*TILE_W/2;
 const camera={x:5480,y:2380,zoom:1,drag:false,startX:0,startY:0,baseX:0,baseY:0,moved:false};
 const pointers=new Map();
-const audio={title:new Audio('assets/audio/title_theme.mp3'),ambient:new Audio('assets/audio/hatchery_ambient.mp3')};
+const audio={title:new Audio('assets/audio/title_theme.mp3'),ambient:new Audio('assets/audio/hatchery_ambient.mp3'),level:null};
 audio.title.loop=audio.ambient.loop=true;audio.title.volume=.38;audio.ambient.volume=.34;
 let soundOn=true,titleButton={x:0,y:0,w:0,h:0},placement=null,selected=null,toastTimer=0,slingshot=null;
 let baseTiles=[],worldDecor=[],worldObstacles=[],dynamicDecor=[];
@@ -19,16 +19,43 @@ let save=loadSave();soundOn=save.sound!==false;
 function loadSave(){try{const parsed=JSON.parse(localStorage.getItem('hatchery-island-save')||'{}'),merged={...freshSave(),...parsed};if(!parsed.version||parsed.version<2){merged.objects=(merged.objects||[]).filter(o=>o.id!=='bird-1'&&o.id!=='bird-2');merged.version=2;localStorage.setItem('hatchery-island-save',JSON.stringify(merged))}return merged}catch{return freshSave()}}
 function persist(){localStorage.setItem('hatchery-island-save',JSON.stringify(save))}
 function play(name,vol=.7){if(!soundOn)return;const a=new Audio(`assets/audio/${name}`);a.volume=vol;a.play().catch(()=>{})}
-function setMusic(which){Object.values(audio).forEach(a=>{if(a!==audio[which]){a.pause();a.currentTime=0}});if(soundOn&&which)audio[which].play().catch(()=>{})}
+function setMusic(which){Object.values(audio).filter(Boolean).forEach(a=>{if(a!==audio[which]){a.pause();a.currentTime=0}});if(soundOn&&which&&audio[which])audio[which].play().catch(()=>{})}
+function setLevelAmbience(theme){
+ const index=parseInt(String(theme||'theme1').match(/\d+/)?.[0]||'1');
+ const file=index===17?'ab_cave_ambient.mp3':index===18?'birthday_ambience.mp3':[4,9,10,11,12,13,14].includes(index)?'ambient_construction.mp3':index===2?'ambient_green_jungleish.mp3':index===3?'ambient_red_savannah.mp3':index===7?'ambient_city.mp3':'ambient_white_dryforest.mp3';
+ if(audio.level){audio.level.pause();audio.level.src=''}
+ audio.level=new Audio(`assets/audio/${file}`);audio.level.loop=true;audio.level.volume=.32;setMusic('level');
+}
 function toast(text){const el=$('#toast');el.textContent=text;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),1500)}
 
 class SpriteLibrary{
- constructor(reg){this.reg=reg}
- async load(){const jobs=Object.entries(this.reg.atlases).map(([name,url])=>new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>{atlasImages.set(name,im);resolve()};im.onerror=reject;im.src=url}));await Promise.all(jobs)}
+ constructor(reg){this.reg=reg;this.pending=new Map();this.failed=new Set();this.queue=[];this.active=0}
+ loadAtlas(name){
+  if(atlasImages.has(name))return Promise.resolve(atlasImages.get(name));
+  if(this.pending.has(name))return this.pending.get(name);
+  const url=this.reg.atlases[name];
+  if(!url)return Promise.reject(new Error(`Unknown sprite atlas: ${name}`));
+  const promise=new Promise((resolve,reject)=>{this.queue.push({name,url,resolve,reject});this.pump()});
+  this.pending.set(name,promise);return promise;
+ }
+ pump(){
+  while(this.active<3&&this.queue.length){
+   const job=this.queue.shift(),image=new Image();this.active++;image.decoding='async';
+   image.onload=()=>{atlasImages.set(job.name,image);this.pending.delete(job.name);this.active--;job.resolve(image);this.pump()};
+   image.onerror=()=>{const error=new Error(`Could not load ${job.url}`);this.failed.add(job.name);this.pending.delete(job.name);this.active--;job.reject(error);this.pump()};
+   image.src=job.url;
+  }
+ }
+ request(name){if(!name||atlasImages.has(name)||this.failed.has(name))return;this.loadAtlas(name).catch(error=>console.warn(error.message))}
+ async load(names){
+  const results=await Promise.allSettled(names.filter(name=>this.reg.atlases[name]).map(name=>this.loadAtlas(name)));
+  if(results.length&&results.every(result=>result.status==='rejected'))throw results[0].reason;
+ }
  meta(name){return this.reg.sprites[name]}
- draw(name,x,y,scale=1,angle=0,alpha=1,context=ctx){const s=this.meta(name);if(!s)return false;const im=atlasImages.get(s.atlas);if(!im)return false;context.save();context.globalAlpha=alpha;context.translate(x,y);context.rotate(angle);context.scale(scale,scale);context.drawImage(im,s.x,s.y,s.w,s.h,-s.ox,-s.oy,s.w,s.h);context.restore();return true}
- drawCentered(name,x,y,maxW,maxH,context=ctx){const s=this.meta(name);if(!s)return;const scale=Math.min(maxW/s.w,maxH/s.h);const im=atlasImages.get(s.atlas);context.drawImage(im,s.x,s.y,s.w,s.h,x-s.w*scale/2,y-s.h*scale/2,s.w*scale,s.h*scale)}
- raw(name){const s=this.meta(name);return s&&{s,image:atlasImages.get(s.atlas)}}
+ image(atlas){const image=atlasImages.get(atlas);if(!image)this.request(atlas);return image}
+ draw(name,x,y,scale=1,angle=0,alpha=1,context=ctx){const s=this.meta(name);if(!s)return false;const im=this.image(s.atlas);if(!im)return false;context.save();context.globalAlpha=alpha;context.translate(x,y);context.rotate(angle);context.scale(scale,scale);context.drawImage(im,s.x,s.y,s.w,s.h,-s.ox,-s.oy,s.w,s.h);context.restore();return true}
+ drawCentered(name,x,y,maxW,maxH,context=ctx){const s=this.meta(name);if(!s)return false;const im=this.image(s.atlas);if(!im)return false;const scale=Math.min(maxW/s.w,maxH/s.h);context.drawImage(im,s.x,s.y,s.w,s.h,x-s.w*scale/2,y-s.h*scale/2,s.w*scale,s.h*scale);return true}
+ raw(name){const s=this.meta(name);if(!s)return null;const image=this.image(s.atlas);return image?{s,image}:null}
 }
 let sprites;
 
@@ -37,8 +64,15 @@ addEventListener('resize',resize);resize();
 
 async function boot(){
  try{
-  levelsPromise=fetch('assets/data/levels.json').then(r=>r.json()).then(v=>(levelsData=v));const [s,g,p]=await Promise.all([fetch('assets/data/sprites.json').then(r=>r.json()),fetch('assets/data/game-data.json').then(r=>r.json()),fetch('assets/data/physics.json').then(r=>r.json())]);registry=s;data=g;physicsData=p;sprites=new SpriteLibrary(s);await sprites.load();prepareMap();$('#loading').hidden=true;screen='title';requestAnimationFrame(frame)
- }catch(e){$('#loading b').textContent='LOAD ERROR: '+e.message;console.error(e)}
+  const json=async url=>{const response=await fetch(url);if(!response.ok)throw new Error(`${url}: HTTP ${response.status}`);return response.json()};
+  levelsPromise=json('assets/data/levels.json?build=6').then(value=>(levelsData=value));
+  const [s,g,p]=await Promise.all([json('assets/data/sprites.json?build=6'),json('assets/data/game-data.json?build=6'),json('assets/data/physics.json?build=6')]);
+  registry=s;data=g;physicsData=p;sprites=new SpriteLibrary(s);
+  // Boot only the title atlases. The old 100+ MB all-at-once decode could make
+  // mobile Safari reject an Image event, which appeared as "LOAD ERROR: undefined".
+  await sprites.load(['BACKGROUNDS_MAIN_1.pvr','MENU_ELEMENTS_2.png','BUTTONS_HATCHERY_1.pvr']);
+  prepareMap();$('#loading').hidden=true;screen='title';requestAnimationFrame(frame)
+ }catch(e){const message=e?.message||String(e||'unknown resource failure');$('#loading b').textContent='LOAD ERROR: '+message;console.error(e)}
 }
 function tilePoint(col,row){return{x:(col-row)*TILE_W/2+MAP_ORIGIN_X,y:(col+row)*TILE_H/2}}
 function prepareMap(){
@@ -107,8 +141,61 @@ function removeUser(o){save.objects=save.objects.filter(x=>x.id!==o.id);persist(
 function clearObstacle(o){if(save.coins<20)return toast('NOT ENOUGH COINS');save.coins-=20;worldObstacles=worldObstacles.filter(x=>x.id!==o.id);save.removed.push(o.id);persist();updateHud();play('abi_remove_item.mp3');toast('AREA CLEARED')}
 
 function packNumber(pack){return parseInt(String(pack).match(/\d+/)?.[0]||'0')}
+function themeNumber(theme){return parseInt(String(theme||'theme1').match(/\d+/)?.[0]||'1')}
+function visualThemeNumber(theme){const n=themeNumber(theme);return n<=8?n:n<=15?n-8:n===16?9:n}
+const LEVEL_THEMES={
+ 1:{sky:'#94cede',ground:'#0a1339'},2:{sky:'#c1e7ef',ground:'#0a130f'},3:{sky:'#efd673',ground:'#2f170e'},
+ 4:{sky:'#90cded',ground:'#1c120c'},5:{sky:'#f1e28c',ground:'#442702'},6:{sky:'#4a5a2c',ground:'#181c0f'},
+ 7:{sky:'#07152b',ground:'#112245'},8:{sky:'#f9f8eb',ground:'#d9eef0'},9:{sky:'#085268',ground:'#332222'},
+ 17:{sky:'#101018',ground:'#111100'},18:{sky:'#63d6f4',ground:'#550000'}
+};
+function themeSpriteNames(theme){
+ const visual=visualThemeNumber(theme);
+ if(visual===17)return{sky:'THEME_CAVE_PARALLAX_1',middle:['THEME_BG_1'],front:'THEME_CAVE_FG_1',ground:'THEME_GROUND_TEXTURE_CAVE'};
+ if(visual===18)return{sky:'BIRTHDAY_SKY',middle:['BIRTHDAY_MIDGROUND_1','BIRTHDAY_MIDGROUND_2','BIRTHDAY_MIDGROUND_3'],front:'BIRTHDAY_GROUND',ground:'THEME_GROUND_TEXTURE_BIRTHDAY'};
+ if(visual===9)return{sky:'BACKGROUND_10_LAYER_1',middle:['BACKGROUND_10_LAYER_4'],items:'BACKGROUND_10_LAYER_2_ITEM_',front:'FOREGROUND_10_LAYER_1',ground:'THEME_GROUND_TEXTURE_10'};
+ return{sky:`BACKGROUND_${visual}_LAYER_1`,middle:[`BACKGROUND_${visual}_LAYER_2`,`BACKGROUND_${visual}_LAYER_3`],items:`BACKGROUND_${visual}_LAYER_2_ITEM_`,front:`FOREGROUND_${visual}_LAYER_2`,ground:`THEME_GROUND_TEXTURE_${visual}`};
+}
+function drawSpriteCover(name,x,y,width,height){
+ const raw=sprites.raw(name);if(!raw)return false;
+ const scale=Math.max(width/raw.s.w,height/raw.s.h),sw=width/scale,sh=height/scale,sx=raw.s.x+(raw.s.w-sw)/2,sy=raw.s.y+(raw.s.h-sh)/2;
+ ctx.drawImage(raw.image,sx,sy,sw,sh,x,y,width,height);return true;
+}
+function drawParallaxStrip(name,S,y,scale=1,speed=.4){
+ const raw=sprites.raw(name);if(!raw)return false;
+ const width=raw.s.w*scale,height=raw.s.h*scale,offset=-((S.cameraX*speed)%width);
+ for(let x=offset-width;x<W+width;x+=width)ctx.drawImage(raw.image,raw.s.x,raw.s.y,raw.s.w,raw.s.h,x,y,width,height);
+ return true;
+}
+function drawParallaxItems(prefix,S,y,speed=.45){
+ const names=Object.keys(registry.sprites).filter(name=>name.startsWith(prefix)).sort();
+ if(!names.length)return;
+ const period=Math.max(W*1.7,1100);
+ names.forEach((name,index)=>{const raw=sprites.raw(name);if(!raw)return;const scale=1.15+(index%3)*.28,x=((index+1)*period/(names.length+1)-S.cameraX*speed)%period-W*.25;ctx.drawImage(raw.image,raw.s.x,raw.s.y,raw.s.w,raw.s.h,x,y-raw.s.h*scale-(index%2)*24,raw.s.w*scale,raw.s.h*scale)});
+}
+function renderLevelTheme(S){
+ const visual=visualThemeNumber(S.level.theme),palette=LEVEL_THEMES[visual]||LEVEL_THEMES[1],names=themeSpriteNames(S.level.theme);
+ ctx.fillStyle=palette.sky;ctx.fillRect(0,0,W,H);
+ if(names.sky)drawSpriteCover(names.sky,0,0,W,S.groundY);
+ names.middle?.forEach((name,index)=>drawParallaxStrip(name,S,S.groundY-(index+1)*95,1.7-index*.25,.18+index*.2));
+ if(names.items)drawParallaxItems(names.items,S,S.groundY-18,.42);
+ const ground=sprites.raw(names.ground);
+ if(ground){const pattern=ctx.createPattern(ground.image,'repeat');if(pattern){ctx.save();ctx.translate(-(S.cameraX*.05%ground.s.w),0);ctx.fillStyle=pattern;ctx.fillRect(-ground.s.w,S.groundY,W+ground.s.w*2,H-S.groundY);ctx.restore()}}
+ else{ctx.fillStyle=palette.ground;ctx.fillRect(0,S.groundY,W,H-S.groundY)}
+ if(names.front)drawParallaxStrip(names.front,S,S.groundY-42,1.35,.82);
+}
 function levelSaveKey(level){return `${level.pack}/${level.id}`}
 function orderedPackLevels(pack){return levelsData.levels.filter(level=>level.pack===pack).sort((a,b)=>(a.order??999999)-(b.order??999999)||a.id.localeCompare(b.id,undefined,{numeric:true}))}
+function packIcon(pack){
+ if(pack==='goldeneggs1')return'assets/images/level-menu/episodeg_icon.webp';
+ const world=packNumber(pack),episode=world<=3?1:world<=5?2:world<=8?3:world<=11?4:world<=14?5:world<=17?6:7,suffix=episode===7?'7':String(episode).padStart(2,'0');
+ return`assets/images/level-menu/ls_pack_thumb_${suffix}.webp`;
+}
+function levelIcon(pack){
+ if(pack==='goldeneggs1')return'assets/images/level-menu/ls_level_bg_normal_open_8.webp';
+ const world=packNumber(pack),index=world<=8?world:world<=11?world-8:world<=14?world-11:world<=17?world-14:4;
+ return`assets/images/level-menu/ls_level_bg_normal_open_${index}.webp`;
+}
 
 async function showLevels(initialPack='pack1'){
  const birds=save.objects.filter(o=>o.type==='bird');
@@ -128,27 +215,27 @@ async function showLevels(initialPack='pack1'){
   if(b==='goldeneggs1')return -1;
   return packNumber(a)-packNumber(b);
  });
- body.innerHTML='<select id="packSelect" aria-label="World"></select><p class="level-count"></p><div class="level-grid"></div>';
- const select=$('#packSelect',body);
+ body.innerHTML='<div class="pack-picker" aria-label="Original level packs"></div><select id="packSelect" class="sr-only" aria-label="World"></select><h3 class="selected-pack-title"></h3><p class="level-count"></p><div class="level-grid"></div>';
+ const select=$('#packSelect',body),picker=$('.pack-picker',body);
  for(const pack of packs){
-  const option=document.createElement('option');
-  option.value=pack;
-  const count=levelsData.levels.filter(level=>level.pack===pack).length;
-  option.textContent=pack==='goldeneggs1'?`GOLDEN EGGS · ${count} LEVELS`:`WORLD ${packNumber(pack)} · ${count} LEVELS`;
-  select.append(option);
+  const count=levelsData.levels.filter(level=>level.pack===pack).length,option=document.createElement('option'),button=document.createElement('button');
+  option.value=pack;option.textContent=pack==='goldeneggs1'?`GOLDEN EGGS · ${count} LEVELS`:`WORLD ${packNumber(pack)} · ${count} LEVELS`;select.append(option);
+  button.type='button';button.className='pack-button';button.dataset.pack=pack;button.innerHTML=`<img src="${packIcon(pack)}" alt=""><b>${pack==='goldeneggs1'?'GOLDEN EGGS':`WORLD ${packNumber(pack)}`}</b><small>${count} LEVELS</small>`;
+  button.onclick=()=>{select.value=pack;play('menu_select.mp3');render();button.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'})};picker.append(button);
  }
  select.value=packs.includes(initialPack)?initialPack:packs[0];
  const render=()=>{
   const levels=orderedPackLevels(select.value),grid=$('.level-grid',body),world=packNumber(select.value);
-  $('.level-count',body).textContent=`${levels.length} distinct level layouts recovered from ${select.value}/ in the IPA`;
+  $$('.pack-button',picker).forEach(button=>button.classList.toggle('active',button.dataset.pack===select.value));
+  $('.selected-pack-title',body).textContent=select.value==='goldeneggs1'?'GOLDEN EGGS':`WORLD ${world}`;
+  const objectCount=levels.reduce((total,level)=>total+Object.keys(level.world).length,0),jointCount=levels.reduce((total,level)=>total+Object.keys(level.joints||{}).length,0);
+  $('.level-count',body).textContent=`${levels.length} distinct IPA layouts · ${objectCount.toLocaleString()} original objects · ${jointCount.toLocaleString()} joints`;
   grid.innerHTML='';
   levels.forEach((level,index)=>{
    const button=document.createElement('button'),key=levelSaveKey(level),stars=save.scores[key]||0;
-   button.className='level-button';
-   button.title=`Original file: ${level.pack}/${level.id}.lua`;
-   button.innerHTML=`<strong>${level.pack==='goldeneggs1'?'GE':world+'-'+(index+1)}</strong><small>${level.id}</small><span>${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span>`;
-   button.onclick=()=>startLevel(level,index+1);
-   grid.append(button);
+   button.className='level-button';button.title=`Original file: ${level.pack}/${level.id}.lua`;
+   button.innerHTML=`<span class="level-icon"><img src="${levelIcon(level.pack)}" alt=""><strong>${level.pack==='goldeneggs1'?'GE':index+1}</strong></span><small>${level.id}</small><span class="level-stars">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span>`;
+   button.onclick=()=>startLevel(level,index+1);grid.append(button);
   });
  };
  select.onchange=render;
@@ -207,6 +294,29 @@ function makeLevelBody(S,object,definition,meta){
  body.plugin.preVelocity={x:0,y:0};
  return body;
 }
+function localConstraintPoint(S,joint,side,body){
+ const x=Number(joint[`x${side}`])||0,y=Number(joint[`y${side}`])||0;
+ if(joint.coordType===2)return{x:x*S.unit,y:y*S.unit};
+ const worldX=S.offsetX+x*S.unit,worldY=S.groundY+(y-S.groundWorldY)*S.unit,dx=worldX-body.position.x,dy=worldY-body.position.y,c=Math.cos(-body.angle),s=Math.sin(-body.angle);
+ return{x:dx*c-dy*s,y:dx*s+dy*c};
+}
+function addLevelJoints(S){
+ const M=Matter;
+ for(const joint of Object.values(S.level.joints||{})){
+  const bodyA=S.bodyByName.get(joint.end1),bodyB=S.bodyByName.get(joint.end2);
+  if(!bodyA||!bodyB)continue;
+  // Two malformed editor leftovers use 500-unit local anchors. The native game
+  // cannot use those meaningfully either; ignore only those corrupt records.
+  if(joint.coordType===2&&Math.max(Math.abs(joint.x1||0),Math.abs(joint.y1||0),Math.abs(joint.x2||0),Math.abs(joint.y2||0))>50)continue;
+  const constraint=M.Constraint.create({
+   bodyA,bodyB,pointA:localConstraintPoint(S,joint,1,bodyA),pointB:localConstraintPoint(S,joint,2,bodyB),
+   stiffness:(joint.type===1&&joint.frequency)?0.1:0.95,damping:joint.dampingRatio??(joint.type===1?0.08:0.02)
+  });
+  constraint.plugin.nativeJoint=joint;
+  if(joint.type===5&&joint.destroyTimer)constraint.plugin.destroyAt=performance.now()+joint.destroyTimer*1000;
+  S.constraints.push(constraint);M.World.add(S.world,constraint);
+ }
+}
 function updateBodyDamageSprite(body){
  const name=damageSpriteFor(body);
  if(name&&sprites.meta(name))body.plugin.render.sprite=name;
@@ -236,6 +346,7 @@ function destroyLevelBody(S,body,award=true){
   S.score+=body.label==='pig'?5000:(definition?.destroyedScoreInc||500);
   play(body.label==='pig'?'piglette destroyed.mp3':'wood destroyed a1.mp3',.55);
  }
+ for(const constraint of [...(S.constraints||[])])if(constraint.bodyA===body||constraint.bodyB===body){Matter.World.remove(S.world,constraint);S.constraints=S.constraints.filter(item=>item!==constraint)}
  Matter.World.remove(S.world,body);
 }
 function damageLevelBody(S,body,amount,attacker){
@@ -285,7 +396,7 @@ function startLevel(level,number){
  closePanel();
  $('#hud').hidden=true;
  screen='slingshot';
- setMusic(null);
+ setLevelAmbience(level.theme);
  play('level start military a1.mp3');
  const M=window.Matter,engine=M.Engine.create({enableSleeping:true,gravity:{x:0,y:1,scale:.001}}),world=engine.world,entries=Object.values(level.world);
  engine.positionIterations=10;engine.velocityIterations=8;engine.constraintIterations=4;
@@ -297,11 +408,14 @@ function startLevel(level,number){
  // KA3D uses 20 source pixels per physics unit. Convert a 9.81-unit gravity
  // into Matter's per-frame scale instead of using Matter's 10x-heavier default.
  engine.gravity.scale=.00000981*unit;
- const now=performance.now();
+ const now=performance.now(),maxCameraX=Math.max(0,offsetX+maxX*unit-W*.55),physicsToWorld=level.physicsToWorld||20;
+ const cameraPosition=data=>{const camera=data?.ipad||data;if(!Number.isFinite(camera?.px))return null;return clamp(offsetX+camera.px/physicsToWorld*unit-W/2,0,maxCameraX)};
+ const castleCameraX=cameraPosition(level.camera?.castle)??maxCameraX,birdCameraX=cameraPosition(level.camera?.bird)??0;
  slingshot={
-  level,number,engine,world,bodies:[],roster,queueIndex:0,current:null,
-  sling:{x:slingX,y:slingY},pullRadius:5.4*unit,groundY,groundWorldY,offsetX,unit,renderScale,
-  cameraX:0,maxCameraX:Math.max(0,offsetX+maxX*unit-W*.82),cameraDragging:false,dragging:false,
+  level,number,engine,world,bodies:[],bodyByName:new Map(),constraints:[],roster,queueIndex:0,current:null,
+  sling:{x:slingX,y:slingY},pullRadius:5.4*unit,groundY,groundWorldY,offsetX,unit,renderScale,physicsToWorld,
+  cameraX:castleCameraX,castleCameraX,birdCameraX,maxCameraX,cameraDragging:false,dragging:false,
+  intro:true,introStartedAt:now,introSweepAt:now+650,introEndsAt:now+2450,
   launchedAt:0,special:false,score:0,complete:false,failed:false,resultShown:false,shotsFired:0,
   initialGoalCount:0,goalsClearedAt:0,damageArmedAt:now+1250,physicsStartsAt:now+250,lastMovingAt:now,
   unusedBonus:0
@@ -315,21 +429,26 @@ function startLevel(level,number){
   if(!meta)continue;
   const body=makeLevelBody(slingshot,object,definition,meta);
   if(body.label==='pig')slingshot.initialGoalCount++;
-  slingshot.bodies.push(body);
+  slingshot.bodies.push(body);slingshot.bodyByName.set(object.name,body);
   M.World.add(world,body);
  }
+ addLevelJoints(slingshot);
+ const activeLevel=slingshot;
  M.Events.on(engine,'beforeUpdate',()=>{
   for(const body of M.Composite.allBodies(world))body.plugin.preVelocity={x:body.velocity.x,y:body.velocity.y};
  });
- M.Events.on(engine,'collisionStart',event=>handleLevelCollisions(slingshot,event));
+ M.Events.on(engine,'collisionStart',event=>handleLevelCollisions(activeLevel,event));
  loadNextBird();
 }
 function makePlayerBody(S,source,x,y,radius,velocity,extra={}){
  const M=Matter,shapeDefinition=physicsData.blocks?.[originalBirdDefinition(source,false)]||physicsData.blocks.RedBird,colorDefinition=physicsData.blocks?.[originalBirdDefinition(source,true)]||shapeDefinition;
- const body=M.Bodies.circle(x,y,radius??Math.max(7,(shapeDefinition.radius||.85)*S.unit),{
-  isStatic:!velocity,restitution:shapeDefinition.restitution??.35,friction:shapeDefinition.friction??.3,
+ const waiting=!velocity,body=M.Bodies.circle(x,y,radius??Math.max(7,(shapeDefinition.radius||.85)*S.unit),{
+  restitution:shapeDefinition.restitution??.35,friction:shapeDefinition.friction??.3,
   density:Math.max(.0001,(shapeDefinition.density||6)*.001),frictionAir:.008,sleepThreshold:60
  });
+ // Matter bodies constructed as static lose their original finite mass and turn
+ // into NaN when released. Build dynamically, then park the waiting bird.
+ if(waiting)M.Body.setStatic(body,true);
  body.label='playerBird';
  body.plugin.source=source;
  body.plugin.definition=shapeDefinition;
@@ -360,7 +479,7 @@ function launchBird(x,y){
  let dx=x-S.sling.x,dy=y-S.sling.y,d=Math.hypot(dx,dy);
  if(d>S.pullRadius){dx*=S.pullRadius/d;dy*=S.pullRadius/d;d=S.pullRadius}
  M.Body.setPosition(b,{x:S.sling.x+dx,y:S.sling.y+dy});
- M.Body.setStatic(b,false);
+ M.Body.setStatic(b,false);M.Sleeping.set(b,false);
  const fraction=clamp(d/S.pullRadius,0,1),speed=.77*S.unit*fraction;
  M.Body.setVelocity(b,{x:d?-dx/d*speed:0,y:d?-dy/d*speed:0});
  S.dragging=false;S.launchedAt=performance.now();S.shotsFired++;
@@ -426,6 +545,10 @@ function updateSlingshot(dt){
  const S=slingshot;
  if(!S)return;
  const now=performance.now();
+ for(const constraint of [...S.constraints]){
+  if(constraint.plugin.destroyAt&&now>=constraint.plugin.destroyAt){Matter.World.remove(S.world,constraint);S.constraints=S.constraints.filter(item=>item!==constraint);continue}
+  const native=constraint.plugin.nativeJoint;if(native?.motor&&constraint.bodyB&&!constraint.bodyB.isStatic)Matter.Body.setAngularVelocity(constraint.bodyB,(native.motorSpeed||0)/60);
+ }
  if(now>=S.physicsStartsAt)Matter.Engine.update(S.engine,dt*1000);
  const bodies=Matter.Composite.allBodies(S.world);
  for(const body of bodies){
@@ -435,14 +558,17 @@ function updateSlingshot(dt){
  const goals=Matter.Composite.allBodies(S.world).filter(body=>body.label==='pig'&&!body.plugin?.destroyed);
  if(!goals.length&&S.shotsFired>0&&!S.complete){
   if(!S.goalsClearedAt)S.goalsClearedAt=now;
-  const stable=now-S.lastMovingAt>750;
+  const stable=S.level.doNotWaitForMovingObjects||now-S.lastMovingAt>750;
   if((stable&&now-S.goalsClearedAt>900)||now-S.goalsClearedAt>5000)finishLevel(S);
  }else if(goals.length)S.goalsClearedAt=0;
  const b=S.current;
- if(b&&!b.isStatic&&!S.cameraDragging){
+ if(S.intro){
+  if(now>=S.introEndsAt){S.intro=false;S.cameraX=S.birdCameraX}
+  else if(now>=S.introSweepAt){const t=clamp((now-S.introSweepAt)/(S.introEndsAt-S.introSweepAt),0,1),ease=1-Math.pow(1-t,3);S.cameraX=S.castleCameraX+(S.birdCameraX-S.castleCameraX)*ease}
+ }else if(b&&!b.isStatic&&!S.cameraDragging){
   const target=clamp(b.position.x-W*.34,0,S.maxCameraX);
   S.cameraX+=(target-S.cameraX)*Math.min(1,dt*4);
- }else if(b?.isStatic&&!S.cameraDragging)S.cameraX+=(0-S.cameraX)*Math.min(1,dt*4);
+ }else if(b?.isStatic&&!S.cameraDragging)S.cameraX+=(S.birdCameraX-S.cameraX)*Math.min(1,dt*4);
  if(b&&!b.isStatic&&S.launchedAt&&Matter.Composite.get(S.world,b.id,'body')){
   const age=(now-S.launchedAt)/1000;
   if(age>12||(age>2&&b.speed<.22)||b.position.y>H+400){
@@ -456,12 +582,10 @@ function updateSlingshot(dt){
 }
 function renderSlingshot(){
  const S=slingshot;
- ctx.fillStyle='#8ed9f4';ctx.fillRect(0,0,W,H);
- const bg=sprites.raw('BACKGROUND_1_LAYER_2');
- if(bg){const off=-(S.cameraX*.16%bg.s.w);for(let x=off-bg.s.w;x<W+bg.s.w;x+=bg.s.w)ctx.drawImage(bg.image,bg.s.x,bg.s.y,bg.s.w,bg.s.h,x,H-bg.s.h,bg.s.w,bg.s.h)}
- ctx.fillStyle='#6eac3b';ctx.fillRect(0,S.groundY,W,H-S.groundY);
+ renderLevelTheme(S);
  ctx.save();ctx.translate(-S.cameraX,0);
  sprites.draw('SLING_SHOT_01_BACK',S.sling.x,S.sling.y+30*S.renderScale,S.renderScale,0,1,ctx);
+ if(S.current?.isStatic){ctx.strokeStyle='#4b2116';ctx.lineWidth=Math.max(4,8*S.renderScale);ctx.beginPath();ctx.moveTo(S.sling.x+10*S.renderScale,S.sling.y+5*S.renderScale);ctx.lineTo(S.current.position.x,S.current.position.y);ctx.stroke()}
  for(const body of Matter.Composite.allBodies(S.world)){
   if(body.label==='ground'||body.plugin?.destroyed)continue;
   ctx.save();ctx.translate(body.position.x,body.position.y);ctx.rotate(body.angle);
@@ -474,13 +598,15 @@ function renderSlingshot(){
   }
   ctx.restore();
  }
+ if(S.current?.isStatic){ctx.strokeStyle='#32150f';ctx.lineWidth=Math.max(4,7*S.renderScale);ctx.beginPath();ctx.moveTo(S.current.position.x,S.current.position.y);ctx.lineTo(S.sling.x-8*S.renderScale,S.sling.y+7*S.renderScale);ctx.stroke()}
  sprites.draw('SLING_SHOT_01_FRONT',S.sling.x,S.sling.y+30*S.renderScale,S.renderScale,0,1,ctx);
  if(S.current?.isStatic){
   ctx.strokeStyle='#fff8';ctx.lineWidth=3;ctx.setLineDash([6,8]);ctx.beginPath();ctx.moveTo(S.sling.x,S.sling.y);ctx.lineTo(S.sling.x+S.unit*18,S.sling.y-S.unit*8);ctx.stroke();ctx.setLineDash([]);
  }
  ctx.restore();
+ if(S.intro){ctx.fillStyle='#063e56cc';ctx.fillRect(W/2-105,H-55,210,36);ctx.fillStyle='#fff';ctx.font='900 15px Arial';ctx.textAlign='center';ctx.fillText('TAP TO SKIP CAMERA',W/2,H-31);ctx.textAlign='start'}
  const world=S.level.pack==='goldeneggs1'?'GOLDEN EGG':`WORLD ${packNumber(S.level.pack)}-${S.number}`;
- ctx.fillStyle='#fff';ctx.strokeStyle='#173845';ctx.lineWidth=5;ctx.font='900 23px Arial';ctx.strokeText(`${world}  ·  ${S.level.id}  ·  SCORE ${S.score}`,90,43);ctx.fillText(`${world}  ·  ${S.level.id}  ·  SCORE ${S.score}`,90,43);
+ ctx.textAlign='start';ctx.fillStyle='#fff';ctx.strokeStyle='#173845';ctx.lineWidth=5;ctx.font='900 23px Arial';ctx.strokeText(`${world}  ·  ${S.level.id}  ·  SCORE ${S.score}`,90,43);ctx.fillText(`${world}  ·  ${S.level.id}  ·  SCORE ${S.score}`,90,43);
  ctx.beginPath();ctx.arc(42,42,29,0,Math.PI*2);ctx.fillStyle='#078da9';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=4;ctx.stroke();ctx.fillStyle='#fff';ctx.font='900 26px Arial';ctx.fillText('‹',34,50);
 }
 function showLevelResult(win,stars){
@@ -507,7 +633,7 @@ function openBirdDesigner(o){selected=o;const bird=o.custom||(o.custom=JSON.pars
 function openPanel(){$('#contextMenu').hidden=true;$('#panel').hidden=false}function closePanel(){$('#panel').hidden=true}
 
 function resetPointerState(){pointers.clear();camera.drag=false;camera.pinch=0;camera.moved=false;if(slingshot){slingshot.dragging=false;slingshot.cameraDragging=false}}
-canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(screen==='slingshot'&&slingshot){if(e.clientX<82&&e.clientY<82){exitLevel();return}const S=slingshot,b=S.current,wx=e.clientX+S.cameraX;if(b?.isStatic&&Math.hypot(wx-b.position.x,e.clientY-b.position.y)<Math.max(48,S.pullRadius))S.dragging=true;else if(b&&!b.isStatic)activateSpecial();else{S.cameraDragging=true;S.cameraDragStart=e.clientX;S.cameraDragBase=S.cameraX}return}camera.drag=true;camera.startX=e.clientX;camera.startY=e.clientY;camera.baseX=camera.x;camera.baseY=camera.y;camera.moved=pointers.size>1;if(screen==='title'&&soundOn&&audio.title.paused)setMusic('title')});
+canvas.addEventListener('pointerdown',e=>{try{canvas.setPointerCapture(e.pointerId)}catch{}pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(screen==='slingshot'&&slingshot){if(e.clientX<82&&e.clientY<82){exitLevel();return}const S=slingshot;if(S.intro){S.intro=false;S.cameraX=S.birdCameraX;return}const b=S.current,wx=e.clientX+S.cameraX;if(b?.isStatic&&Math.hypot(wx-b.position.x,e.clientY-b.position.y)<Math.max(48,S.pullRadius))S.dragging=true;else if(b&&!b.isStatic&&!S.special)activateSpecial();else{S.cameraDragging=true;S.cameraDragStart=e.clientX;S.cameraDragBase=S.cameraX}return}camera.drag=true;camera.startX=e.clientX;camera.startY=e.clientY;camera.baseX=camera.x;camera.baseY=camera.y;camera.moved=pointers.size>1;if(screen==='title'&&soundOn&&audio.title.paused)setMusic('title')});
 canvas.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(screen==='slingshot'&&slingshot){const S=slingshot;if(S.dragging&&S.current){const dx=e.clientX+S.cameraX-S.sling.x,dy=e.clientY-S.sling.y,d=Math.hypot(dx,dy),r=Math.min(S.pullRadius,d);Matter.Body.setPosition(S.current,{x:S.sling.x+(d?dx/d*r:0),y:S.sling.y+(d?dy/d*r:0)});return}else if(S.cameraDragging){S.cameraX=clamp(S.cameraDragBase-(e.clientX-S.cameraDragStart),0,S.maxCameraX);return}}if(placement){placement.pointerX=e.clientX;placement.pointerY=e.clientY}if(screen!=='world')return;if(pointers.size===1&&camera.drag){const dx=e.clientX-camera.startX,dy=e.clientY-camera.startY;if(Math.hypot(dx,dy)>5)camera.moved=true;camera.x=clamp(camera.baseX-dx/camera.zoom,100,13600);camera.y=clamp(camera.baseY-dy/camera.zoom,100,6700)}else if(pointers.size>=2){camera.moved=true;const ps=[...pointers.values()].slice(0,2),d=Math.hypot(ps[0].x-ps[1].x,ps[0].y-ps[1].y);if(!camera.pinch){camera.pinch=d;camera.pinchZoom=camera.zoom}else camera.zoom=clamp(camera.pinchZoom*d/camera.pinch,.38,1.45)}});
 function finishPointer(e,cancelled=false){const wasMoved=camera.moved;if(screen==='slingshot'&&slingshot?.dragging){if(cancelled&&slingshot.current)Matter.Body.setPosition(slingshot.current,slingshot.sling);else if(slingshot.current)launchBird(slingshot.current.position.x,slingshot.current.position.y);slingshot.dragging=false}if(slingshot)slingshot.cameraDragging=false;pointers.delete(e.pointerId);if(screen==='world'&&pointers.size===1){const p=[...pointers.values()][0];camera.startX=p.x;camera.startY=p.y;camera.baseX=camera.x;camera.baseY=camera.y;camera.pinch=0;camera.moved=true}else if(!pointers.size){camera.drag=false;camera.pinch=0;if(!cancelled&&!wasMoved&&screen!=='slingshot')handleTap(e.clientX,e.clientY);camera.moved=false}}
 canvas.addEventListener('pointerup',e=>finishPointer(e,false));canvas.addEventListener('pointercancel',e=>finishPointer(e,true));canvas.addEventListener('lostpointercapture',e=>{if(pointers.has(e.pointerId))finishPointer(e,true)});addEventListener('blur',resetPointerState);document.addEventListener('visibilitychange',()=>{if(document.hidden)resetPointerState()});
@@ -517,6 +643,7 @@ $$('.tools button').forEach(b=>b.onclick=()=>{const t=b.dataset.tool;play('menu_
 $('#homeButton').onclick=()=>{screen='title';$('#hud').hidden=true;setMusic('title');play('menu_back.mp3')};$('#soundButton').onclick=()=>{soundOn=!soundOn;save.sound=soundOn;persist();if(!soundOn)Object.values(audio).forEach(a=>a.pause());else setMusic(screen==='world'?'ambient':'title');updateHud()};$('#zoomIn').onclick=()=>camera.zoom=clamp(camera.zoom*1.15,.38,1.45);$('#zoomOut').onclick=()=>camera.zoom=clamp(camera.zoom/1.15,.38,1.45);$('.close-context').onclick=()=>$('#contextMenu').hidden=true;$('#closePanel').onclick=closePanel;
 
 function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;time+=dt;ctx.setTransform(DPR,0,0,DPR,0,0);if(screen==='title')renderTitle();else if(screen==='world')renderWorld();else if(screen==='slingshot'){updateSlingshot(dt);renderSlingshot()}requestAnimationFrame(frame)}
+window.__hatcheryDebug=()=>({screen,atlasesLoaded:atlasImages.size,level:slingshot?.level?.id||null,pack:slingshot?.level?.pack||null,cameraX:slingshot?.cameraX||0,currentBird:slingshot?.current?{x:slingshot.current.position.x,y:slingshot.current.position.y,speed:slingshot.current.speed,static:slingshot.current.isStatic,sleeping:slingshot.current.isSleeping}:null,goals:slingshot?Matter.Composite.allBodies(slingshot.world).filter(body=>body.label==='pig').length:0,objects:slingshot?Matter.Composite.allBodies(slingshot.world).length:0,joints:slingshot?.constraints?.length||0});
 boot();
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 })();
